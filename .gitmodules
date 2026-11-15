@@ -10,3 +10,6 @@
 [submodule "dependencies/submodules/UESDK"]
 	path = dependencies/submodules/UESDK
 	url = git@github.com:praydog/UESDK.git
+[submodule "frontend"]
+	path = frontend
+	url = https://github.com/AlShadi/uevr-frontend.git
