@@ -33,7 +33,7 @@ Universal Unreal Engine VR Mod (4/5)
 
 ## Getting Started
 
-Before launching, ensure you have installed .NET 6.0 SDK. It should tell you where to install it upon first open, but if not, you can [download it from here](https://dotnet.microsoft.com/en-us/download/dotnet/6.0). Most people should click x64 in the top left table, under the Installers column, next to windows.
+Before launching, ensure you have installed the .NET 10.0 Desktop Runtime (or SDK). It should tell you where to install it upon first open, but if not, you can [download it from here](https://dotnet.microsoft.com/en-us/download/dotnet/10.0). Most people should click x64 under .NET Desktop Runtime, next to Windows.
 
 Download the latest release from the [Releases page](https://github.com/praydog/UEVR/releases)
 
