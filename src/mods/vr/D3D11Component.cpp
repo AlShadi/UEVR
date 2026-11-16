@@ -675,8 +675,12 @@ vr::EVRCompositorError D3D11Component::on_frame(VR* vr) {
                             .back = 1
                         };
 
+                        auto* const right_source = vr->is_game_frame_stalled()
+                            ? backbuffer.Get()
+                            : m_scene_capture_tex_ref.tex.Get();
+
                         context->CopySubresourceRegion(render_target, 0, 0, 0, 0, backbuffer.Get(), 0, &left_src_box);
-                        context->CopySubresourceRegion(render_target, 0, m_backbuffer_size[0] / 2, 0, 0, m_scene_capture_tex_ref.tex.Get(), 0, &left_src_box);
+                        context->CopySubresourceRegion(render_target, 0, m_backbuffer_size[0] / 2, 0, 0, right_source, 0, &left_src_box);
                     });
                 }
 
@@ -768,7 +772,7 @@ vr::EVRCompositorError D3D11Component::on_frame(VR* vr) {
             }
 
             // Copy the back buffer to the right eye texture.
-            if (!m_scene_capture_tex_ref.has_texture()) {
+            if (!m_scene_capture_tex_ref.has_texture() || vr->is_game_frame_stalled()) {
                 D3D11_BOX src_box{};
                 if (!vr->is_extreme_compatibility_mode_enabled()) {
                     if (!is_afr) {

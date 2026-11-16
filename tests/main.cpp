@@ -215,6 +215,17 @@ TEST_CASE("UEVersion detection from file version and string override") {
     REQUIRE(uevr::detect_ue_version(0x40012, "0.00") == uevr::UEVersion::UE4_18);
     REQUIRE(uevr::detect_ue_version(0x4000A, "0.00") == uevr::UEVersion::UE4_10);
     REQUIRE(uevr::detect_ue_version(0x40009, "4.9.0") == uevr::UEVersion::Unknown);
+
+    // AVX / SSE2 double-precision (LWC) instruction mnemonic classification.
+    REQUIRE(uevr::is_double_precision_arithmetic("ADDSD") == true);
+    REQUIRE(uevr::is_double_precision_arithmetic("VADDSD") == true);
+    REQUIRE(uevr::is_double_precision_arithmetic("VMULSD") == true);
+    REQUIRE(uevr::is_double_precision_arithmetic("VFMADD231SD") == true);
+    REQUIRE(uevr::is_double_precision_arithmetic("VSUBPD") == true);
+    REQUIRE(uevr::is_double_precision_arithmetic("ADDSS") == false);
+    REQUIRE(uevr::is_double_precision_arithmetic("VADDSS") == false);
+    REQUIRE(uevr::is_double_precision_arithmetic("CVTSS2SD") == false);
+    REQUIRE(uevr::is_double_precision_arithmetic("VCVTSS2SD") == false);
 }
 
 TEST_CASE("WindowFilter worker thread stays alive after empty tick") {

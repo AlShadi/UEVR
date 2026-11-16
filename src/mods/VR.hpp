@@ -550,6 +550,19 @@ public:
         return m_native_stereo_fix_same_pass->value();
     }
 
+    void notify_game_frame_advanced() {
+        const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        m_last_game_frame_advance_ns.store(now_ns, std::memory_order_relaxed);
+    }
+
+    bool is_game_frame_stalled() const {
+        const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        const auto last_ns = m_last_game_frame_advance_ns.load(std::memory_order_relaxed);
+        return (now_ns - last_ns) >= std::chrono::nanoseconds{std::chrono::milliseconds{250}}.count();
+    }
+
     bool is_ahud_compatibility_enabled() const {
         return m_compatibility_ahud->value();
     }
@@ -1136,6 +1149,10 @@ private:
     bool m_has_hw_scheduling{false}; // hardware accelerated GPU scheduling
     bool m_spoofed_gamepad_connection{false};
     bool m_aim_temp_disabled{false};
+    std::atomic<int64_t> m_last_game_frame_advance_ns{
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count()
+    };
 
     struct {
         bool draw{false};

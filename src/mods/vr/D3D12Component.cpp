@@ -184,8 +184,12 @@ vr::EVRCompositorError D3D12Component::on_frame(VR* vr) {
             .back = 1
         };
 
+        auto* const right_source = vr->is_game_frame_stalled()
+            ? m_game_tex.texture.Get()
+            : m_scene_capture_tex.texture.Get();
+
         commands.copy_region_stereo(
-            m_game_tex.texture.Get(), m_scene_capture_tex.texture.Get(), render_target,
+            m_game_tex.texture.Get(), right_source, render_target,
             &left_src_box, &left_src_box,
             0, 0, 0, m_backbuffer_size[0] / 2, 0, 0,
             D3D12_RESOURCE_STATE_RENDER_TARGET,
@@ -592,7 +596,7 @@ vr::EVRCompositorError D3D12Component::on_frame(VR* vr) {
             }
 
             if (!is_afr) {
-                if (m_scene_capture_tex.texture.Get() == nullptr) {
+                if (m_scene_capture_tex.texture.Get() == nullptr || vr->is_game_frame_stalled()) {
                     m_openvr.copy_right(backbuffer.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET);
                 } else {
                     m_openvr.copy_left_to_right(m_scene_capture_tex.texture.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET);

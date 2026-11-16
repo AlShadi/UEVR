@@ -1,10 +1,41 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <string_view>
 
 namespace uevr {
+
+// True for scalar (SD) and packed (PD) double-precision arithmetic instructions in both
+// legacy SSE2 and VEX/EVEX encodings (/arch:AVX+). Excludes CVT* conversions so stray
+// float-to-double conversions in single-precision UE4 builds do not trigger false positives.
+[[nodiscard]] constexpr bool is_double_precision_arithmetic(std::string_view mnemonic) noexcept {
+    if (mnemonic.size() > 1 && mnemonic.front() == 'V') {
+        mnemonic.remove_prefix(1);
+    }
+
+    if (!mnemonic.ends_with("SD") && !mnemonic.ends_with("PD")) {
+        return false;
+    }
+
+    if (mnemonic.starts_with("CVT")) {
+        return false;
+    }
+
+    constexpr std::array<std::string_view, 13> roots{{
+        "ADD", "SUB", "MUL", "DIV", "SQRT", "MAX", "MIN",
+        "FMADD", "FMSUB", "FNMADD", "FNMSUB", "HADD", "HSUB",
+    }};
+
+    for (const auto root : roots) {
+        if (mnemonic.starts_with(root)) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 enum class UEVersion {
     Unknown,

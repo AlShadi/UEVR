@@ -57,6 +57,7 @@
 #include "../../utility/Logging.hpp"
 
 #include "FFakeStereoRenderingHook.hpp"
+#include "UEVersion.hpp"
 
 #include <tracy/Tracy.hpp>
 
@@ -73,24 +74,32 @@ bool is_using_double_precision(uintptr_t addr) {
     bool result = false;
 
     utility::exhaustive_decode((uint8_t*)addr, 50, [&](INSTRUX& ix, uintptr_t ip) -> utility::ExhaustionResult {
-        if (std::string_view{ix.Mnemonic}.starts_with("CALL")) {
+        const std::string_view mnemonic{ix.Mnemonic};
+
+        if (mnemonic.starts_with("CALL")) {
             return utility::ExhaustionResult::STEP_OVER;
         }
 
-        if (ix.Instruction == ND_INS_MOVSD && ix.Operands[0].Type == ND_OP_MEM && ix.Operands[1].Type == ND_OP_REG) {
-            SPDLOG_INFO("[UE5 Detected] Detected Double precision MOVSD at {:x}", (uintptr_t)ip);
+        if ((ix.Instruction == ND_INS_MOVSD || ix.Instruction == ND_INS_VMOVSD) &&
+            ix.Operands[0].Type == ND_OP_MEM && ix.Operands[1].Type == ND_OP_REG)
+        {
+            SPDLOG_INFO("[UE5 Detected] Detected Double precision store ({}) at {:x}", mnemonic, (uintptr_t)ip);
             result = true;
             return utility::ExhaustionResult::BREAK;
         }
 
-        if (ix.Instruction == ND_INS_ADDSD) {
-            SPDLOG_INFO("[UE5 Detected] Detected Double precision ADDSD at {:x}", (uintptr_t)ip);
+        if (uevr::is_double_precision_arithmetic(mnemonic)) {
+            SPDLOG_INFO("[UE5 Detected] Detected Double precision arithmetic ({}) at {:x}", mnemonic, (uintptr_t)ip);
             result = true;
             return utility::ExhaustionResult::BREAK;
         }
 
         return utility::ExhaustionResult::CONTINUE;
     });
+
+    if (!result) {
+        SPDLOG_INFO("No double precision usage found at {:x}", addr);
+    }
 
     return result;
 }
@@ -1020,6 +1029,7 @@ bool FFakeStereoRenderingHook::standard_fake_stereo_hook(uintptr_t vtable) {
     SPDLOG_INFO("IsStereoEnabled: {:x}", (uintptr_t)*is_stereo_enabled_func_ptr);
 
     m_has_double_precision = is_using_double_precision(stereo_view_offset_func) || is_using_double_precision(calculate_stereo_projection_matrix_func);
+    SPDLOG_INFO("Double precision (LWC) view math: {}", m_has_double_precision ? "YES" : "NO");
 
     {
         m_adjust_view_rect_hook = safetyhook::create_inline((void*)adjust_view_rect_func, adjust_view_rect);
@@ -2595,6 +2605,7 @@ struct SceneViewExtensionAnalyzer {
     static inline uint32_t begin_render_viewfamily_index{0};
     static inline uint32_t pre_render_viewfamily_renderthread_index{0};
     static inline uint32_t frame_count_offset{0};
+    static inline std::atomic<uint32_t> frame_key_offset{};
 
     template<int N>
     static bool analysis_dummy_stage1(ISceneViewExtension* extension, uintptr_t a2, uintptr_t a3, uintptr_t a4) {
@@ -3464,8 +3475,75 @@ void FFakeStereoRenderingHook::begin_render_viewfamily(ISceneViewExtension* exte
 
     //vr->update_hmd_state(true, frame_count);
     auto runtime = vr->get_runtime();
-    runtime->internal_frame_count = frame_count;
-    runtime->on_pre_render_game_thread(frame_count);
+
+    // Ensure the pose pipeline key advances monotonically even when the game's frame number
+    // freezes in menus or restarts on level load.
+    constexpr uint32_t restart_slack = 64;
+    constexpr uint32_t max_families_per_frame = 4;
+
+    static uint32_t highest_game_frame_count{};
+    static uint32_t key_carry{};
+    static uint32_t previous_frame_count{};
+    static uint32_t repeat_run{};
+    static uint32_t stall_frames{};
+    static bool was_stalled{};
+
+    if (frame_count > highest_game_frame_count) {
+        highest_game_frame_count = frame_count;
+        vr->notify_game_frame_advanced();
+    } else if (frame_count + restart_slack < highest_game_frame_count) {
+        key_carry += highest_game_frame_count + 1 - frame_count;
+
+        SPDLOG_INFO("Game restarted its frame numbering ({} after a high of {}), carrying the key on to {}",
+            frame_count, highest_game_frame_count, frame_count + key_carry);
+
+        highest_game_frame_count = frame_count;
+        vr->notify_game_frame_advanced();
+    }
+
+    if (frame_count == previous_frame_count) {
+        ++repeat_run;
+    } else {
+        if (frame_count > previous_frame_count) {
+            if (repeat_run > 0 && repeat_run <= max_families_per_frame) {
+                SPDLOG_INFO_ONCE("Game submits repeated frame numbers within a frame (saw {} {} times in a row)",
+                    previous_frame_count, repeat_run + 1);
+            }
+        } else if (previous_frame_count - frame_count <= restart_slack) {
+            SPDLOG_INFO_ONCE("Game alternates frame numbers per frame ({} after {})", frame_count, previous_frame_count);
+        }
+
+        repeat_run = 0;
+    }
+
+    previous_frame_count = frame_count;
+
+    const auto stalled = vr->is_game_frame_stalled();
+    const auto stalled_for = stall_frames;
+
+    if (stalled) {
+        ++stall_frames;
+    } else if (stall_frames != 0) {
+        key_carry += stall_frames;
+        stall_frames = 0;
+    }
+
+    if (stalled != was_stalled) {
+        was_stalled = stalled;
+
+        if (stalled) {
+            SPDLOG_INFO("Game stopped advancing its frame number, holding {}", frame_count);
+        } else {
+            SPDLOG_INFO("Game resumed advancing its frame number at {}, after {} frames of stall, key at {}",
+                frame_count, stalled_for, frame_count + key_carry);
+        }
+    }
+
+    const auto effective_frame_count = frame_count + key_carry + stall_frames;
+    SceneViewExtensionAnalyzer::frame_key_offset.store(key_carry + stall_frames, std::memory_order_relaxed);
+
+    runtime->internal_frame_count = effective_frame_count;
+    runtime->on_pre_render_game_thread(effective_frame_count);
 
     // This is a HACKHACKHACK to get splitscreen working on around 4.20 to 4.27 something
     // This is completely borked on UE5
@@ -3695,7 +3773,8 @@ void FFakeStereoRenderingHook::pre_render_viewfamily_renderthread(ISceneViewExte
         cmd_list = *(sdk::FRHICommandListBase**)((uintptr_t)cmd_list + ue5_command_offset);
     }
 
-    const auto compensation = g_hook->get_frame_delay_compensation();
+    const auto key_offset = (int32_t)SceneViewExtensionAnalyzer::frame_key_offset.load(std::memory_order_relaxed);
+    const auto compensation = g_hook->get_frame_delay_compensation() + key_offset;
 
     // Using slate's draw window hook is the safest way to do this without
     // false positives on the command list in this function
