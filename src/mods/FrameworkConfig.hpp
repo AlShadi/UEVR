@@ -22,6 +22,7 @@ public:
             *m_log_level,
             *m_always_show_cursor,
             *m_font_size,
+            *m_clear_log,
         };
     }
 
@@ -127,4 +128,5 @@ private:
     
     ModKey::Ptr m_show_cursor_key{ ModKey::create(generate_name("ShowCursorKey")) };
     ModInt32::Ptr m_font_size{ModInt32::create(generate_name("FontSize"), 16)};
+    ModToggle::Ptr m_clear_log{ModToggle::create("Frontend_ClearLog", true)};
 };

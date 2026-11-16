@@ -16,6 +16,7 @@
 #include "utility/Thread.hpp"
 #include "utility/String.hpp"
 #include "utility/Input.hpp"
+#include <utility/Config.hpp>
 
 #include "WindowFilter.hpp"
 
@@ -185,10 +186,16 @@ void Framework::command_thread() {
     }
 }
 
+static bool should_truncate_log() {
+    const auto path_u8 = Framework::get_persistent_dir("config.txt").u8string();
+    utility::Config cfg{std::string{path_u8.begin(), path_u8.end()}};
+    return cfg.get<bool>("Frontend_ClearLog").value_or(true);
+}
+
 Framework::Framework(HMODULE framework_module)
     : m_framework_module{framework_module}
     , m_game_module{GetModuleHandle(0)},
-    m_logger{spdlog::basic_logger_mt("UnrealVR", (get_persistent_dir() / "log.txt").string(), true)},
+    m_logger{spdlog::basic_logger_mt("UnrealVR", (get_persistent_dir() / "log.txt").string(), should_truncate_log())},
     m_vr{std::make_shared<VR>()}
 {
     std::scoped_lock __{m_constructor_mutex};
