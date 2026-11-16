@@ -1,0 +1,110 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Configure CMake (Release)",
+            "type": "process",
+            "command": "powershell",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                "$ErrorActionPreference = 'Stop'; if (-not (Test-Path 'build/CMakeCache.txt')) { $cmake = (Get-Command cmake -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1); if (-not $cmake) { $cmake = 'C:\\Program Files\\CMake\\bin\\cmake.exe' }; if (-not (Test-Path $cmake)) { throw 'cmake.exe not found' }; & $cmake -S . -B build -G 'Visual Studio 17 2022' -A x64 -DCMAKE_BUILD_TYPE=Release; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } } else { Write-Host 'CMake already configured in build/CMakeCache.txt' }"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Reconfigure CMake (Release)",
+            "type": "process",
+            "command": "powershell",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                "$ErrorActionPreference = 'Stop'; $cmake = (Get-Command cmake -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1); if (-not $cmake) { $cmake = 'C:\\Program Files\\CMake\\bin\\cmake.exe' }; if (-not (Test-Path $cmake)) { throw 'cmake.exe not found' }; & $cmake -S . -B build -G 'Visual Studio 17 2022' -A x64 -DCMAKE_BUILD_TYPE=Release; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build Backend (Release)",
+            "type": "process",
+            "command": "powershell",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                "$ErrorActionPreference = 'Stop'; $cmake = (Get-Command cmake -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1); if (-not $cmake) { $cmake = 'C:\\Program Files\\CMake\\bin\\cmake.exe' }; if (-not (Test-Path $cmake)) { throw 'cmake.exe not found' }; & $cmake --build build --config Release --target uevr vr-plugin-nullifier LuaVR; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "problemMatcher": [
+                "$msCompile"
+            ]
+        },
+        {
+            "label": "Publish Frontend",
+            "type": "process",
+            "command": "dotnet",
+            "args": [
+                "publish",
+                "${workspaceFolder}/frontend/UEVR/UEVR.csproj",
+                "--configuration",
+                "Release",
+                "--output",
+                "${workspaceFolder}/publish"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "problemMatcher": [
+                "$msCompile"
+            ]
+        },
+        {
+            "label": "Stage Publish Output",
+            "type": "process",
+            "command": "powershell",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                "$ErrorActionPreference = 'Stop'; New-Item -ItemType Directory -Force -Path 'publish' | Out-Null; $files = @('build/bin/uevr/UEVRBackend.dll', 'build/bin/uevr/UEVRBackend.pdb', 'build/bin/uevr/openvr_api.dll', 'build/bin/vr-plugin-nullifier/UEVRPluginNullifier.dll', 'build/bin/LuaVR/LuaVR.dll'); foreach ($f in $files) { Copy-Item -LiteralPath $f -Destination 'publish' -Force }; $rev = (git rev-parse HEAD).Trim(); if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; [System.IO.File]::WriteAllText((Join-Path (Get-Location) 'publish\\revision.txt'), $rev + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false))"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build and Publish UEVR",
+            "dependsOn": [
+                "Configure CMake (Release)",
+                "Build Backend (Release)",
+                "Publish Frontend",
+                "Stage Publish Output"
+            ],
+            "dependsOrder": "sequence",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        }
+    ]
+}

@@ -29,6 +29,7 @@
 
 build/*
 .vscode/*
+!.vscode/tasks.json
 out/*
 .vs/*
 publish/*
