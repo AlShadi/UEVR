@@ -1,10 +1,33 @@
-# UEVR ![build](https://github.com/praydog/UEVR/actions/workflows/dev-release.yml/badge.svg)
+# UEVR ![build](https://github.com/AlShadi/UEVR/actions/workflows/dev-release.yml/badge.svg)
 
 Universal Unreal Engine VR Mod (4/5)
 
+> **Note:** This repository is a fork of [praydog/UEVR](https://github.com/praydog/UEVR) with multiple stability, memory-safety, concurrency, Unreal Engine 5.5+ compatibility, scripting/plugin API, and frontend injector fixes applied.
+
+## Fork Improvements & Fixes
+
+- **Unreal Engine & Stereo Hooks**
+  - Extended `UEVersion` detection and `IXRTrackingSystemHook` vtable dispatch to support **UE 5.5 – 5.7**, with string version overrides taking priority over disk metadata.
+  - Fixed a stack buffer overflow in `FFakeStereoRenderingHook::calculate_stereo_projection_matrix` where an inverted double-precision check wrote a 128-byte `Matrix4x4d` into a 64-byte UE4 `Matrix4x4f`.
+  - Fixed `RenderTargetPoolHook::find_free_element_hook_ue5` dropping its 5th parameter (`a5`), which shifted stack arguments in UE5 depth/render-target pooling.
+  - Fixed `IXRTrackingSystemHook` overwriting `ResetPosition_index()` instead of hooking `ResetOrientation_index()`.
+  - Fixed missing `break;` fallthrough in `UObjectHook::process_event_hook` that corrupted `ArrayProperty` buffers as `StrProperty`, throttled async class sorting, and fixed `SDKDumper` bitfield `BoolProperty` getter precedence.
+- **D3D11 / D3D12 Rendering & VR Runtimes**
+  - Fixed D3D12 `CommandContext::wait()` resetting in-flight `ID3D12CommandAllocator`s on `WAIT_TIMEOUT` (`DXGI_ERROR_DEVICE_REMOVED`), added missing mutex synchronization in `copy_region_stereo`, and fixed `fence_event` handle leaks.
+  - Fixed per-frame COM reference leaks on `m_device` in `D3D11Hook::present` and `D3D12Hook::present`, `ID3D11DeviceContext` in `Framework::initialize`, and `ID3D11ClassInstance` in `D3D11Component`.
+  - Fixed unmatched `ImGui::TreePop()` and `ImGui::EndGroup()` stack underflows in `VR::on_draw_sidebar_entry`, iterator invalidation in the OpenXR bindings UI, `NaN` thumbstick normalization UB on centered XInput sticks, and eye-transform bounds/mutex locking.
+- **Core Framework, Threads & Plugin / Lua APIs**
+  - Fixed `WindowFilter` worker thread exiting on its first empty tick (`return` vs `continue`), synchronized job queue access, and replaced blocking `GetWindowTextA` with `SendMessageTimeoutA(..., SMTO_ABORTIFHUNG)`.
+  - Fixed a self-deadlock in `PluginLoader::attempt_unload_plugins()` when plugins call `remove_callback()` during `uevr_plugin_shutdown()`.
+  - Fixed swapped `duration` and `amplitude` parameters in C++ `uevr::API::VR::trigger_haptic_vibration`, a 4-byte stack out-of-bounds read and quaternion component scrambling in Lua `MotionControllerState::set_rotation_offset`, `FMalloc` support for persistent Lua `FString` property assignments, and subdirectory preservation in `fs` bindings.
+  - Replaced detached thread in `DInputHook` with `std::jthread`, wired `std::stop_token` into `XInputHook`, guarded `UEVRSharedMemory` against null dereferences, and pre-loaded `dbghelp.dll` in `ExceptionHandler`.
+- **Frontend Injector (.NET 10) & Build / Test Suite**
+  - Upgraded the WPF frontend to **.NET 10**, integrated `frontend` as a Git submodule, and added automated C++ (`uevr-tests`) and C# (`UEVR.Tests`) unit test suites plus VS Code build/publish tasks.
+  - Fixed 64-bit `SIZE_T` (`nuint`) P/Invoke stack corruption in `WriteProcessMemory` / `VirtualAllocEx`, prevented freeing remote DLL path memory on `WaitForSingleObject` timeout, added recursive nested-ZIP DLL warning inspection and Zip-Slip protection in `GameConfig`, fixed `--attach=` auto-shutdown, and eliminated `Process` handle leaks and per-keystroke config I/O storms.
+
 ## Supported Engine Versions
 
-4.8 - 5.4
+4.8 - 5.7
 
 ## Links
 
