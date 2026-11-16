@@ -1,4 +1,5 @@
 // This can be considered a binding of the C API.
+#include <cmath>
 #include <iostream>
 #include <memory>
 
@@ -385,9 +386,42 @@ int ScriptContext::setup_bindings() {
     );
 
     m_lua.new_usertype<UEVR_PluginFunctions>("UEVR_PluginFunctions",
-        "log_error", &UEVR_PluginFunctions::log_error,
-        "log_warn", &UEVR_PluginFunctions::log_warn,
-        "log_info", &UEVR_PluginFunctions::log_info,
+        "log_error", sol::overload(
+            [](UEVR_PluginFunctions* self, const char* message) {
+                if (self != nullptr && self->log_error != nullptr && message != nullptr) {
+                    self->log_error("%s", message);
+                }
+            },
+            [](const char* message) {
+                if (message != nullptr) {
+                    uevr::API::get()->log_error("%s", message);
+                }
+            }
+        ),
+        "log_warn", sol::overload(
+            [](UEVR_PluginFunctions* self, const char* message) {
+                if (self != nullptr && self->log_warn != nullptr && message != nullptr) {
+                    self->log_warn("%s", message);
+                }
+            },
+            [](const char* message) {
+                if (message != nullptr) {
+                    uevr::API::get()->log_warn("%s", message);
+                }
+            }
+        ),
+        "log_info", sol::overload(
+            [](UEVR_PluginFunctions* self, const char* message) {
+                if (self != nullptr && self->log_info != nullptr && message != nullptr) {
+                    self->log_info("%s", message);
+                }
+            },
+            [](const char* message) {
+                if (message != nullptr) {
+                    uevr::API::get()->log_info("%s", message);
+                }
+            }
+        ),
         "is_drawing_ui", &UEVR_PluginFunctions::is_drawing_ui,
 
         "get_commit_hash", &UEVR_PluginFunctions::get_commit_hash,
@@ -462,6 +496,76 @@ int ScriptContext::setup_bindings() {
         "get_transform", &UEVR_VRData::get_transform,
         "get_eye_offset", &UEVR_VRData::get_eye_offset,
         "get_ue_projection_matrix", &UEVR_VRData::get_ue_projection_matrix,
+        "get_projection_fov", sol::overload(
+            [](sol::this_state s, UEVR_VRData* self, unsigned int eye) -> sol::object {
+                sol::state_view lua{s};
+
+                if (self == nullptr || self->get_ue_projection_matrix == nullptr) {
+                    return sol::make_object(s, sol::nil);
+                }
+
+                UEVR_Matrix4x4f projection{};
+                self->get_ue_projection_matrix((UEVR_Eye)eye, &projection);
+
+                const auto xx = projection.m[0][0];
+                const auto yy = projection.m[1][1];
+
+                if (xx == 0.0f || yy == 0.0f) {
+                    return sol::make_object(s, sol::nil);
+                }
+
+                const auto tan_right = (1.0f - projection.m[2][0]) / xx;
+                const auto tan_left = (-1.0f - projection.m[2][0]) / xx;
+                const auto tan_up = (1.0f - projection.m[2][1]) / yy;
+                const auto tan_down = (-1.0f - projection.m[2][1]) / yy;
+
+                constexpr auto to_degrees = 57.2957795131f;
+
+                auto out = lua.create_table();
+                out["left"] = std::atan(tan_left) * to_degrees;
+                out["right"] = std::atan(tan_right) * to_degrees;
+                out["up"] = std::atan(tan_up) * to_degrees;
+                out["down"] = std::atan(tan_down) * to_degrees;
+                out["horizontal"] = (std::atan(tan_right) - std::atan(tan_left)) * to_degrees;
+                out["vertical"] = (std::atan(tan_up) - std::atan(tan_down)) * to_degrees;
+
+                return sol::make_object(s, out);
+            },
+            [](sol::this_state s, unsigned int eye) -> sol::object {
+                auto* vr = uevr::API::get()->param()->vr;
+                sol::state_view lua{s};
+                if (vr == nullptr || vr->get_ue_projection_matrix == nullptr) {
+                    return sol::make_object(s, sol::nil);
+                }
+
+                UEVR_Matrix4x4f projection{};
+                vr->get_ue_projection_matrix((UEVR_Eye)eye, &projection);
+
+                const auto xx = projection.m[0][0];
+                const auto yy = projection.m[1][1];
+
+                if (xx == 0.0f || yy == 0.0f) {
+                    return sol::make_object(s, sol::nil);
+                }
+
+                const auto tan_right = (1.0f - projection.m[2][0]) / xx;
+                const auto tan_left = (-1.0f - projection.m[2][0]) / xx;
+                const auto tan_up = (1.0f - projection.m[2][1]) / yy;
+                const auto tan_down = (-1.0f - projection.m[2][1]) / yy;
+
+                constexpr auto to_degrees = 57.2957795131f;
+
+                auto out = lua.create_table();
+                out["left"] = std::atan(tan_left) * to_degrees;
+                out["right"] = std::atan(tan_right) * to_degrees;
+                out["up"] = std::atan(tan_up) * to_degrees;
+                out["down"] = std::atan(tan_down) * to_degrees;
+                out["horizontal"] = (std::atan(tan_right) - std::atan(tan_left)) * to_degrees;
+                out["vertical"] = (std::atan(tan_up) - std::atan(tan_down)) * to_degrees;
+
+                return sol::make_object(s, out);
+            }
+        ),
         "get_left_joystick_source", &UEVR_VRData::get_left_joystick_source,
         "get_right_joystick_source", &UEVR_VRData::get_right_joystick_source,
         "get_action_handle", &UEVR_VRData::get_action_handle,
@@ -1142,6 +1246,53 @@ int ScriptContext::setup_bindings() {
             api->dispatch_custom_event(event_name, event_data);
         }
     );
+
+    {
+        auto stringify = [](sol::this_state s, sol::variadic_args args) -> std::string {
+            sol::state_view lua{s};
+            sol::function tostring = lua["tostring"];
+
+            std::string out{};
+
+            for (auto arg : args) {
+                if (!out.empty()) {
+                    out += "\t";
+                }
+
+                auto piece = tostring(arg);
+
+                if (piece.valid() && piece.get_type() == sol::type::string) {
+                    out += piece.get<std::string>();
+                } else {
+                    out += "<?>";
+                }
+            }
+
+            return out;
+        };
+
+        m_lua["print"] = [stringify](sol::this_state s, sol::variadic_args args) {
+            ScriptContext::log(stringify(s, args));
+        };
+
+        auto log_table = m_lua.create_table();
+
+        log_table["info"] = [stringify](sol::this_state s, sol::variadic_args args) {
+            ScriptContext::log(stringify(s, args));
+        };
+
+        log_table["warn"] = [stringify](sol::this_state s, sol::variadic_args args) {
+            const auto msg = stringify(s, args);
+            uevr::API::get()->log_warn("[LuaVR] %s", msg.c_str());
+        };
+
+        log_table["error"] = [stringify](sol::this_state s, sol::variadic_args args) {
+            const auto msg = stringify(s, args);
+            uevr::API::get()->log_error("[LuaVR] %s", msg.c_str());
+        };
+
+        m_lua["log"] = log_table;
+    }
 
     setup_callback_bindings();
 

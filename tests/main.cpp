@@ -324,6 +324,43 @@ TEST_CASE("API::VR::trigger_haptic_vibration parameter order and Lua quaternion 
     REQUIRE_NEAR(s_rot_offset.x, -0.1f, 1e-5f);
     REQUIRE_NEAR(s_rot_offset.y, 0.25f, 1e-5f);
     REQUIRE_NEAR(s_rot_offset.z, -0.35f, 1e-5f);
+
+    // Test safe log_info/warn/error with both ':' and '.' syntax and '%' characters, plus print/log table.
+    auto res_log = lua.safe_script(R"(
+        uevr.params.functions:log_info("colon 100% safe %s %n")
+        uevr.params.functions.log_info("dot 100% safe %s %n")
+        uevr.params.functions:log_warn("warn 100% safe")
+        uevr.params.functions:log_error("error 100% safe")
+        print("hello", 123, true)
+        log.info("info", 456)
+        log.warn("warn", 789)
+        log.error("error", 101)
+    )");
+    REQUIRE(res_log.valid());
+
+    // Test vr:get_projection_fov(eye) and vr.get_projection_fov(eye) for a symmetric 90-degree FOV projection.
+    host.vr.get_ue_projection_matrix = [](UEVR_Eye, UEVR_Matrix4x4f* mat) {
+        if (mat != nullptr) {
+            *mat = UEVR_Matrix4x4f{};
+            mat->m[0][0] = 1.0f; // tan_right = 1, tan_left = -1 -> 45 deg each -> 90 deg horizontal
+            mat->m[1][1] = 1.0f; // tan_up = 1, tan_down = -1 -> 45 deg each -> 90 deg vertical
+            mat->m[2][0] = 0.0f;
+            mat->m[2][1] = 0.0f;
+        }
+    };
+
+    auto res_fov = lua.safe_script(R"(
+        local f1 = uevr.params.vr:get_projection_fov(0)
+        local f2 = uevr.params.vr.get_projection_fov(0)
+        return f1.horizontal, f1.vertical, f1.left, f1.right, f2.horizontal
+    )");
+    REQUIRE(res_fov.valid());
+    std::tuple<float, float, float, float, float> fov_vals = res_fov;
+    REQUIRE_NEAR(std::get<0>(fov_vals), 90.0f, 1e-2f);
+    REQUIRE_NEAR(std::get<1>(fov_vals), 90.0f, 1e-2f);
+    REQUIRE_NEAR(std::get<2>(fov_vals), -45.0f, 1e-2f);
+    REQUIRE_NEAR(std::get<3>(fov_vals), 45.0f, 1e-2f);
+    REQUIRE_NEAR(std::get<4>(fov_vals), 90.0f, 1e-2f);
 }
 
 int main() {

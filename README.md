@@ -8,6 +8,8 @@ Universal Unreal Engine VR Mod (4/5)
 
 - **Unreal Engine & Stereo Hooks**
   - Extended `UEVersion` detection and `IXRTrackingSystemHook` vtable dispatch to support **UE 5.5 – 5.7**, with string version overrides taking priority over disk metadata.
+  - Added AVX (`VEX`/`EVEX`) double-precision (LWC) instruction detection (`VMOVSD`, `VADDSD`, `VMULSD`, `VFMADD*SD`, etc.) so `/arch:AVX`-compiled UE5 titles do not misdetect LWC math as single-precision (#429), and prevented UE 5.5/5.6 zero-based eye index `0` from being misclassified as a monoscopic full pass (#422).
+  - Added monotonic pose-pipeline frame key tracking and stalled-menu right-eye fallback across D3D11/D3D12 OpenXR/OpenVR paths so games that freeze `FrameNumber` in pause menus or restart numbering on level loads do not suffer head-tracking swim (#436).
   - Fixed a stack buffer overflow in `FFakeStereoRenderingHook::calculate_stereo_projection_matrix` where an inverted double-precision check wrote a 128-byte `Matrix4x4d` into a 64-byte UE4 `Matrix4x4f`.
   - Fixed `RenderTargetPoolHook::find_free_element_hook_ue5` dropping its 5th parameter (`a5`), which shifted stack arguments in UE5 depth/render-target pooling.
   - Fixed `IXRTrackingSystemHook` overwriting `ResetPosition_index()` instead of hooking `ResetOrientation_index()`.
@@ -15,11 +17,12 @@ Universal Unreal Engine VR Mod (4/5)
 - **D3D11 / D3D12 Rendering & VR Runtimes**
   - Fixed D3D12 `CommandContext::wait()` resetting in-flight `ID3D12CommandAllocator`s on `WAIT_TIMEOUT` (`DXGI_ERROR_DEVICE_REMOVED`), added missing mutex synchronization in `copy_region_stereo`, and fixed `fence_event` handle leaks.
   - Fixed per-frame COM reference leaks on `m_device` in `D3D11Hook::present` and `D3D12Hook::present`, `ID3D11DeviceContext` in `Framework::initialize`, and `ID3D11ClassInstance` in `D3D11Component`.
-  - Fixed unmatched `ImGui::TreePop()` and `ImGui::EndGroup()` stack underflows in `VR::on_draw_sidebar_entry`, iterator invalidation in the OpenXR bindings UI, `NaN` thumbstick normalization UB on centered XInput sticks, and eye-transform bounds/mutex locking.
+  - Fixed unmatched `ImGui::TreePop()` and `ImGui::EndGroup()` stack underflows in `VR::on_draw_sidebar_entry`, iterator invalidation in the OpenXR bindings UI, `NaN` thumbstick normalization UB on centered XInput sticks, dynamic OpenXR FOV change detection (#372), `DragFloat3` camera offset precision controls (#413), and eye-transform bounds/mutex locking.
 - **Core Framework, Threads & Plugin / Lua APIs**
   - Fixed `WindowFilter` worker thread exiting on its first empty tick (`return` vs `continue`), synchronized job queue access, and replaced blocking `GetWindowTextA` with `SendMessageTimeoutA(..., SMTO_ABORTIFHUNG)`.
-  - Fixed a self-deadlock in `PluginLoader::attempt_unload_plugins()` when plugins call `remove_callback()` during `uevr_plugin_shutdown()`.
+  - Fixed a self-deadlock in `PluginLoader::attempt_unload_plugins()` when plugins call `remove_callback()` during `uevr_plugin_shutdown()`, and fixed UTF-8 config path handling for Windows usernames with non-ASCII characters (#398).
   - Fixed swapped `duration` and `amplitude` parameters in C++ `uevr::API::VR::trigger_haptic_vibration`, a 4-byte stack out-of-bounds read and quaternion component scrambling in Lua `MotionControllerState::set_rotation_offset`, `FMalloc` support for persistent Lua `FString` property assignments, and subdirectory preservation in `fs` bindings.
+  - Wrapped Lua `log_info` / `log_warn` / `log_error` to safely support both `:` and `.` call syntax without format-string crashes, bound global `print` and `log.*` (#434), and added `vr:get_projection_fov(eye)` returning per-eye FOV angles in degrees (#435).
   - Replaced detached thread in `DInputHook` with `std::jthread`, wired `std::stop_token` into `XInputHook`, guarded `UEVRSharedMemory` against null dereferences, and pre-loaded `dbghelp.dll` in `ExceptionHandler`.
 - **Frontend Injector (.NET 10) & Build / Test Suite**
   - Upgraded the WPF frontend to **.NET 10**, integrated `frontend` as a Git submodule, and added automated C++ (`uevr-tests`) and C# (`UEVR.Tests`) unit test suites plus VS Code build/publish tasks.

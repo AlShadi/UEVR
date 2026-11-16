@@ -207,6 +207,7 @@ public:
     std::unordered_map<uint32_t, Swapchain> swapchains{}; // SwapchainIndex -> Swapchain
     std::vector<XrView> views{};
     std::vector<XrView> stage_views{};
+    std::array<XrFovf, 2> last_fovs{};
 
     //std::deque<std::vector<XrView>> stage_view_queue{};
     struct PipelineState {
