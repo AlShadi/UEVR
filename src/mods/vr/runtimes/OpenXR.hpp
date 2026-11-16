@@ -423,6 +423,8 @@ public:
     struct InteractionBinding {
         std::string interaction_path_name{};
         std::string action_name{};
+        std::string only_profile{};
+        std::string exclude_profile{};
     };
 
     struct ActionVectorAssociation {
@@ -441,14 +443,14 @@ public:
         {"/user/hand/left/input/x/click", "abuttonleft"}, // oculus?
         {"/user/hand/left/input/x/touch", "abuttontouchleft"}, // oculus?
 
-        {"/user/hand/right/input/x/click", "abuttonright"}, // oculus?
-        {"/user/hand/right/input/x/touch", "abuttontouchright"}, // oculus?
+        {"/user/hand/right/input/x/click", "abuttonright", "", "/interaction_profiles/valve/frame_controller_valve"}, // oculus?
+        {"/user/hand/right/input/x/touch", "abuttontouchright", "", "/interaction_profiles/valve/frame_controller_valve"}, // oculus?
 
         {"/user/hand/left/input/y/click", "bbuttonleft"}, // oculus?
         {"/user/hand/left/input/y/touch", "bbuttontouchleft"}, // oculus?
 
-        {"/user/hand/right/input/y/click", "bbuttonright"}, // oculus?
-        {"/user/hand/right/input/y/touch", "bbuttontouchright"}, // oculus?
+        {"/user/hand/right/input/y/click", "bbuttonright", "", "/interaction_profiles/valve/frame_controller_valve"}, // oculus?
+        {"/user/hand/right/input/y/touch", "bbuttontouchright", "", "/interaction_profiles/valve/frame_controller_valve"}, // oculus?
 
         {"/user/hand/left/input/a/click", "abuttonleft"}, // oculus?
         {"/user/hand/left/input/a/touch", "abuttontouchleft"}, // oculus?
@@ -459,8 +461,22 @@ public:
         {"/user/hand/left/input/b/click", "bbuttonleft"}, // oculus?
         {"/user/hand/left/input/b/touch", "bbuttontouchleft"}, // oculus?
 
-        {"/user/hand/right/input/b/click", "bbuttonright"}, // oculus?
-        {"/user/hand/right/input/b/touch", "bbuttontouchright"}, // oculus?
+        {"/user/hand/right/input/b/click", "bbuttonright", "", "/interaction_profiles/valve/frame_controller_valve"}, // oculus?
+        {"/user/hand/right/input/b/touch", "bbuttontouchright", "", "/interaction_profiles/valve/frame_controller_valve"}, // oculus?
+
+        // Valve Steam Frame controller: 4 face buttons on right hand, D-pad on left hand.
+        {"/user/hand/right/input/b/click", "abuttonleft", "/interaction_profiles/valve/frame_controller_valve"},
+        {"/user/hand/right/input/b/touch", "abuttontouchleft", "/interaction_profiles/valve/frame_controller_valve"},
+        {"/user/hand/right/input/x/click", "bbuttonright", "/interaction_profiles/valve/frame_controller_valve"},
+        {"/user/hand/right/input/x/touch", "bbuttontouchright", "/interaction_profiles/valve/frame_controller_valve"},
+        {"/user/hand/right/input/y/click", "bbuttonleft", "/interaction_profiles/valve/frame_controller_valve"},
+        {"/user/hand/right/input/y/touch", "bbuttontouchleft", "/interaction_profiles/valve/frame_controller_valve"},
+        {"/user/hand/left/input/dpad_up/click", "dpad_up", "/interaction_profiles/valve/frame_controller_valve"},
+        {"/user/hand/left/input/dpad_right/click", "dpad_right", "/interaction_profiles/valve/frame_controller_valve"},
+        {"/user/hand/left/input/dpad_down/click", "dpad_down", "/interaction_profiles/valve/frame_controller_valve"},
+        {"/user/hand/left/input/dpad_left/click", "dpad_left", "/interaction_profiles/valve/frame_controller_valve"},
+        {"/user/hand/left/input/view/click", "systembutton", "/interaction_profiles/valve/frame_controller_valve"},
+        {"/user/hand/*/input/bumper/click", "grip", "/interaction_profiles/valve/frame_controller_valve"},
 
         {"/user/hand/*/input/thumbstick", "joystick"}, // oculus?
         {"/user/hand/*/input/thumbstick/click", "joystickclick"}, // oculus?
@@ -495,6 +511,7 @@ public:
         "/interaction_profiles/oculus/touch_controller",
         "/interaction_profiles/oculus/go_controller",
         "/interaction_profiles/valve/index_controller",
+        "/interaction_profiles/valve/frame_controller_valve",
         "/interaction_profiles/microsoft/motion_controller",
         "/interaction_profiles/htc/vive_controller",
     };

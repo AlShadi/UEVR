@@ -732,6 +732,44 @@ sol::object call_function(sol::this_state s, uevr::API::UObject* self, uevr::API
             }
 
             memcpy(arg.object, (void*)((uintptr_t)params.data() + prop->get_offset()), structprop->get_struct()->get_struct_size());
+        } else if (args[arg_index].is<lua::datatypes::Vector3d*>()) {
+            if (prop_name_hash != L"StructProperty"_fnv) {
+                throw sol::error("Invalid struct type for out Vector3d parameter");
+            }
+
+            const auto structprop = (uevr::API::FStructProperty*)prop;
+            const auto struct_size = structprop->get_struct() != nullptr ? structprop->get_struct()->get_struct_size() : 0;
+            auto* dst = args[arg_index].as<lua::datatypes::Vector3d*>();
+
+            if (struct_size >= (int32_t)sizeof(lua::datatypes::Vector3d)) {
+                memcpy(dst, (void*)((uintptr_t)params.data() + prop->get_offset()), sizeof(lua::datatypes::Vector3d));
+            } else if (struct_size >= (int32_t)sizeof(lua::datatypes::Vector3f)) {
+                const auto* src = (const lua::datatypes::Vector3f*)((uintptr_t)params.data() + prop->get_offset());
+                dst->x = src->x;
+                dst->y = src->y;
+                dst->z = src->z;
+            } else {
+                throw sol::error("Invalid struct size for out Vector3d parameter");
+            }
+        } else if (args[arg_index].is<lua::datatypes::Vector3f*>()) {
+            if (prop_name_hash != L"StructProperty"_fnv) {
+                throw sol::error("Invalid struct type for out Vector3f parameter");
+            }
+
+            const auto structprop = (uevr::API::FStructProperty*)prop;
+            const auto struct_size = structprop->get_struct() != nullptr ? structprop->get_struct()->get_struct_size() : 0;
+            auto* dst = args[arg_index].as<lua::datatypes::Vector3f*>();
+
+            if (struct_size >= (int32_t)sizeof(lua::datatypes::Vector3d)) {
+                const auto* src = (const lua::datatypes::Vector3d*)((uintptr_t)params.data() + prop->get_offset());
+                dst->x = (float)src->x;
+                dst->y = (float)src->y;
+                dst->z = (float)src->z;
+            } else if (struct_size >= (int32_t)sizeof(lua::datatypes::Vector3f)) {
+                memcpy(dst, (void*)((uintptr_t)params.data() + prop->get_offset()), sizeof(lua::datatypes::Vector3f));
+            } else {
+                throw sol::error("Invalid struct size for out Vector3f parameter");
+            }
         } else if (args[arg_index].is<sol::lua_table>()) {
             auto tbl = args[arg_index].as<sol::lua_table>();
             const auto tbl_was_empty = tbl.empty();

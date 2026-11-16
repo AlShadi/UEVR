@@ -75,6 +75,13 @@ void OverlayComponent::on_pre_imgui_frame() {
     this->update_input_mouse_emulation();
 }
 
+bool OverlayComponent::is_hovering_framework_ui() const {
+    return m_framework_mouse_emulation->value() &&
+           m_framework_intersect_state.intersecting &&
+           VR::get()->is_using_controllers() &&
+           imgui::is_point_intersecting_any(m_last_mouse_pos.x, m_last_mouse_pos.y);
+}
+
 void OverlayComponent::update_input_mouse_emulation() {
     if (m_forced_aim) {
         VR::get()->set_aim_allowed(true);
@@ -90,13 +97,28 @@ void OverlayComponent::update_input_mouse_emulation() {
     const auto delta_f = std::min<float>(delta / 1000.0f, 0.5f);
     m_last_mouse_move_time = now;
 
+    auto& io = ImGui::GetIO();
+    static bool was_pressing = false;
+    static bool was_pressing_right = false;
+
+    auto release_mouse_buttons = [&]() {
+        if (was_pressing) {
+            io.AddMouseButtonEvent(0, false);
+            was_pressing = false;
+        }
+        if (was_pressing_right) {
+            io.AddMouseButtonEvent(1, false);
+            was_pressing_right = false;
+        }
+    };
+
     if (!m_framework_mouse_emulation->value()) {
+        release_mouse_buttons();
         return;
     }
 
     if (m_framework_intersect_state.intersecting && VR::get()->is_using_controllers()) {
         auto vr = VR::get();
-        auto& io = ImGui::GetIO();
         const auto is_initial_frame = !vr->is_using_afr() || vr->get_frame_count() % 2 == vr->m_left_eye_interval;
 
         const auto x = m_framework_intersect_state.swapchain_intersection_point.x;
@@ -105,29 +127,40 @@ void OverlayComponent::update_input_mouse_emulation() {
         const auto window_size = g_framework->get_last_window_size();
         const auto window_pos = g_framework->get_last_window_pos();
 
-        // lerp towards the intersection point
-        m_last_mouse_pos = glm::lerp(m_last_mouse_pos, glm::vec2{x, y}, delta_f * 10.0f);
+        // lerp towards the intersection point (snappy enough that quick clicks hit immediately)
+        const auto target_pos = glm::vec2{x, y};
+        if (m_last_mouse_pos == glm::vec2{0.0f, 0.0f} || glm::distance(m_last_mouse_pos, target_pos) > 250.0f) {
+            m_last_mouse_pos = target_pos;
+        } else {
+            m_last_mouse_pos = glm::lerp(m_last_mouse_pos, target_pos, (std::min)(delta_f * 25.0f, 1.0f));
+        }
 
         if (imgui::is_point_intersecting_any(m_last_mouse_pos.x, m_last_mouse_pos.y)) {
             io.MousePos = ImVec2{
                 m_last_mouse_pos.x,
                 m_last_mouse_pos.y
             };
+            // Enqueue mouse position event after ImGui_ImplWin32_NewFrame so NewFrame() doesn't overwrite MousePos.
+            io.AddMouseSourceEvent(ImGuiMouseSource_Mouse);
+            io.AddMousePosEvent(m_last_mouse_pos.x, m_last_mouse_pos.y);
 
-            static bool was_pressing = false;
-            static bool was_pressing_right = false;
-
-            // Left click.
+            // Left click (A button on right hand, or Trigger on the active pointer hand).
             const auto& a_button_right = !vr->m_swap_controllers->value() ? VR::s_action_a_button_right : VR::s_action_a_button_left;
-            if (VR::get()->is_action_active_any_joystick(vr->get_action_handle(a_button_right))) {
-                // Clear any gamepad A events.
+            const auto pointer_joystick = !vr->m_swap_controllers->value() ? vr->get_right_joystick() : vr->get_left_joystick();
+            const bool a_pressed = VR::get()->is_action_active_any_joystick(vr->get_action_handle(a_button_right));
+            const bool trigger_pressed = VR::get()->is_action_active(vr->get_action_handle(VR::s_action_trigger), pointer_joystick);
+
+            if (a_pressed || trigger_pressed) {
+                // Clear any gamepad A/R2 events so gamepad navigation doesn't double-activate or override mouse click.
                 auto ctx = io.Ctx;
 
                 if (ctx != nullptr) {
                     for (auto i = 0; i < ctx->InputEventsQueue.size(); ++i) {
                         auto& event = ctx->InputEventsQueue[i];
 
-                        if (event.Type == ImGuiInputEventType::ImGuiInputEventType_Key && event.Key.Key == ImGuiKey_GamepadFaceDown) {
+                        if (event.Type == ImGuiInputEventType::ImGuiInputEventType_Key &&
+                            (event.Key.Key == ImGuiKey_GamepadFaceDown || event.Key.Key == ImGuiKey_GamepadR2))
+                        {
                             ctx->InputEventsQueue.erase(ctx->InputEventsQueue.begin() + i);
                             --i;
                         }
@@ -176,10 +209,15 @@ void OverlayComponent::update_input_mouse_emulation() {
 
             VR::get()->set_aim_allowed(false);
             m_forced_aim = true;
-        } else if (m_forced_aim) {
-            VR::get()->set_aim_allowed(true);
-            m_forced_aim = false;
+        } else {
+            release_mouse_buttons();
+            if (m_forced_aim) {
+                VR::get()->set_aim_allowed(true);
+                m_forced_aim = false;
+            }
         }
+    } else {
+        release_mouse_buttons();
     }
 }
 
@@ -1123,6 +1161,8 @@ std::optional<std::reference_wrapper<XrCompositionLayerQuad>> OverlayComponent::
             } else {
                 m_parent->m_framework_intersect_state.intersecting = false;
             }
+        } else {
+            m_parent->m_framework_intersect_state.intersecting = false;
         }
     } else {
         m_parent->m_framework_intersect_state.intersecting = false;

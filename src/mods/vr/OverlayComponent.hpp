@@ -42,6 +42,9 @@ public:
         return m_framework_intersect_state;
     }
 
+    // Returns true when controller mouse emulation is actively hovering a UEVR ImGui window.
+    bool is_hovering_framework_ui() const;
+
     bool should_invert_ui_alpha() const {
         return m_ui_invert_alpha->value();
     }

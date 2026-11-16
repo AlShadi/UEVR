@@ -299,7 +299,8 @@ std::optional<std::string> VR::initialize_openxr() {
 
                 const std::unordered_set<std::string> wanted_extensions {
                     XR_KHR_COMPOSITION_LAYER_DEPTH_EXTENSION_NAME,
-                    XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME
+                    XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME,
+                    "XR_VALVE_frame_controller_interaction"
                     // To be seen if we need more!
                 };
 
@@ -1182,7 +1183,8 @@ void VR::update_imgui_state_from_xinput_state(XINPUT_STATE& state, bool is_vr_co
 
         // Now that we're drawing the UI, check for special button combos the user can use as shortcuts
         // like recenter view, set standing origin, camera offset modification, etc.
-        m_rt_modifier.draw = gamepad.bRightTrigger >= 128;
+        // Skip opening RT Modifier when pointing the laser at the UEVR ImGui overlay so Trigger can left-click menus.
+        m_rt_modifier.draw = (gamepad.bRightTrigger >= 128) && !m_overlay_component.is_hovering_framework_ui();
 
         if (!m_rt_modifier.draw) {
             m_rt_modifier.page = 0;

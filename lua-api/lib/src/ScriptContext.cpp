@@ -1244,6 +1244,91 @@ int ScriptContext::setup_bindings() {
         "get_console_manager", &uevr::API::get_console_manager,
         "dispatch_custom_event", [](uevr::API* api, const char* event_name, const char* event_data) {
             api->dispatch_custom_event(event_name, event_data);
+        },
+        "send_mouse_button", [](uevr::API*, int button, bool down) {
+            auto find_game_window = []() -> HWND {
+                const DWORD pid = GetCurrentProcessId();
+                auto belongs_to_self = [pid](HWND wnd) -> bool {
+                    if (wnd == nullptr || !IsWindowVisible(wnd)) {
+                        return false;
+                    }
+                    DWORD wnd_pid = 0;
+                    GetWindowThreadProcessId(wnd, &wnd_pid);
+                    return wnd_pid == pid;
+                };
+
+                if (HWND fg = GetForegroundWindow(); belongs_to_self(fg)) {
+                    return fg;
+                }
+                if (HWND focus = GetFocus(); belongs_to_self(focus)) {
+                    return focus;
+                }
+
+                struct EnumData {
+                    DWORD pid{};
+                    HWND best{nullptr};
+                    LONG best_area{0};
+                } data{pid};
+
+                EnumWindows([](HWND wnd, LPARAM lparam) -> BOOL {
+                    auto* d = reinterpret_cast<EnumData*>(lparam);
+                    DWORD wnd_pid = 0;
+                    GetWindowThreadProcessId(wnd, &wnd_pid);
+                    if (wnd_pid == d->pid && IsWindowVisible(wnd) && !IsIconic(wnd)) {
+                        RECT rc{};
+                        if (GetClientRect(wnd, &rc)) {
+                            const LONG area = (rc.right - rc.left) * (rc.bottom - rc.top);
+                            if (area > d->best_area) {
+                                d->best = wnd;
+                                d->best_area = area;
+                            }
+                        }
+                    }
+                    return TRUE;
+                }, reinterpret_cast<LPARAM>(&data));
+
+                return data.best;
+            };
+
+            HWND hwnd = find_game_window();
+            if (hwnd != nullptr && GetForegroundWindow() == hwnd) {
+                DWORD flag = 0;
+                if (button == 0) {
+                    flag = down ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
+                } else if (button == 1) {
+                    flag = down ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP;
+                } else if (button == 2) {
+                    flag = down ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP;
+                }
+                if (flag != 0) {
+                    INPUT input{};
+                    input.type = INPUT_MOUSE;
+                    input.mi.dwFlags = flag;
+                    SendInput(1, &input, sizeof(INPUT));
+                    return;
+                }
+            }
+
+            if (hwnd != nullptr) {
+                POINT pt{};
+                GetCursorPos(&pt);
+                ScreenToClient(hwnd, &pt);
+                UINT msg = 0;
+                WPARAM wparam = 0;
+                if (button == 0) {
+                    msg = down ? WM_LBUTTONDOWN : WM_LBUTTONUP;
+                    wparam = down ? MK_LBUTTON : 0;
+                } else if (button == 1) {
+                    msg = down ? WM_RBUTTONDOWN : WM_RBUTTONUP;
+                    wparam = down ? MK_RBUTTON : 0;
+                } else if (button == 2) {
+                    msg = down ? WM_MBUTTONDOWN : WM_MBUTTONUP;
+                    wparam = down ? MK_MBUTTON : 0;
+                }
+                if (msg != 0) {
+                    PostMessageW(hwnd, msg, wparam, MAKELPARAM(pt.x, pt.y));
+                }
+            }
         }
     );
 

@@ -1028,6 +1028,14 @@ std::optional<std::string> OpenXR::initialize_actions(const std::string& json_st
 
                 if (this->action_set.action_map.contains(map_it.action_name)) {
                     for (const auto& controller : s_supported_controllers) {
+                        if (!map_it.only_profile.empty() && map_it.only_profile != controller) {
+                            continue;
+                        }
+
+                        if (!map_it.exclude_profile.empty() && map_it.exclude_profile == controller) {
+                            continue;
+                        }
+
                         if (attempt_add_binding(controller, { this->action_set.action_map[map_it.action_name], p })) {
                             this->hands[index].profiles[controller].path_map[map_it.action_name] = p;
                         }
