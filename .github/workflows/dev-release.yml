@@ -29,20 +29,21 @@ jobs:
       - name: Build Lua API (shared DLL)
         run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --target LuaVR
 
-      - name: Checkout frontend
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
-        with:
-          repository: praydog/uevr-frontend
-          path: frontend
-          persist-credentials: false
+      - name: Build and run C++ tests
+        run: |
+          cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --target uevr-tests
+          ctest --test-dir ${{github.workspace}}/build -C ${{env.BUILD_TYPE}} --output-on-failure
 
       - name: Set up dotnet
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
 
+      - name: Run C# tests
+        run: dotnet run --project '${{github.workspace}}/frontend/UEVR.Tests/UEVR.Tests.csproj' --configuration Release
+
       - name: Build frontend
-        run: dotnet publish '${{github.workspace}}/frontend' --output '${{github.workspace}}/build/bin/${{matrix.target}}' --configuration Release
+        run: dotnet publish '${{github.workspace}}/frontend/UEVR/UEVR.csproj' --output '${{github.workspace}}/build/bin/${{matrix.target}}' --configuration Release
 
       - name: Upload artifacts
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8

@@ -6,9 +6,12 @@
 #include <utility/Thread.hpp>
 #include <utility/Module.hpp>
 #include <utility/RTTI.hpp>
+#include <utility/ScopeGuard.hpp>
+#include <wrl.h>
 
 #include "WindowFilter.hpp"
 #include "Framework.hpp"
+#include "HookUtils.hpp"
 
 #include "D3D12Hook.hpp"
 
@@ -23,9 +26,9 @@ bool D3D12Hook::hook() {
 
     g_d3d12_hook = this;
 
-    IDXGISwapChain1* swap_chain1{ nullptr };
-    IDXGISwapChain3* swap_chain{ nullptr };
-    ID3D12Device* device{ nullptr };
+    Microsoft::WRL::ComPtr<IDXGISwapChain1> swap_chain1{};
+    Microsoft::WRL::ComPtr<IDXGISwapChain3> swap_chain{};
+    Microsoft::WRL::ComPtr<ID3D12Device> device{};
 
     D3D_FEATURE_LEVEL feature_level = D3D_FEATURE_LEVEL_11_0;
     DXGI_SWAP_CHAIN_DESC1 swap_chain_desc1;
@@ -56,37 +59,16 @@ bool D3D12Hook::hook() {
 
     spdlog::info("Creating dummy device");
 
-    // Get the original on-disk bytes of the D3D12CreateDevice export
-    const auto original_bytes = utility::get_original_bytes(d3d12_create_device);
+    {
+        hooks::ScopedPrologueRestore prologue_guard{(void*)d3d12_create_device, "D3D12CreateDevice"};
 
-    // Temporarily unhook D3D12CreateDevice
-    // it allows compatibility with ReShade and other overlays that hook it
-    // this is just a dummy device anyways, we don't want the other overlays to be able to use it
-    if (original_bytes) {
-        spdlog::info("D3D12CreateDevice appears to be hooked, temporarily unhooking");
-
-        std::vector<uint8_t> hooked_bytes(original_bytes->size());
-        memcpy(hooked_bytes.data(), d3d12_create_device, original_bytes->size());
-
-        ProtectionOverride protection_override{ d3d12_create_device, original_bytes->size(), PAGE_EXECUTE_READWRITE };
-        memcpy(d3d12_create_device, original_bytes->data(), original_bytes->size());
-        
-        if (FAILED(d3d12_create_device(nullptr, feature_level, IID_PPV_ARGS(&device)))) {
-            spdlog::error("Failed to create D3D12 Dummy device");
-            memcpy(d3d12_create_device, hooked_bytes.data(), hooked_bytes.size());
-            return false;
-        }
-
-        spdlog::info("Restoring hooked bytes for D3D12CreateDevice");
-        memcpy(d3d12_create_device, hooked_bytes.data(), hooked_bytes.size());
-    } else { // D3D12CreateDevice is not hooked
         if (FAILED(d3d12_create_device(nullptr, feature_level, IID_PPV_ARGS(&device)))) {
             spdlog::error("Failed to create D3D12 Dummy device");
             return false;
         }
     }
 
-    spdlog::info("Dummy device: {:x}", (uintptr_t)device);
+    spdlog::info("Dummy device: {:x}", (uintptr_t)device.Get());
 
     // Manually get CreateDXGIFactory export because the user may be running Windows 7
     const auto dxgi_module = LoadLibraryA("dxgi.dll");
@@ -104,7 +86,7 @@ bool D3D12Hook::hook() {
 
     spdlog::info("Creating dummy DXGI factory");
 
-    IDXGIFactory4* factory{ nullptr };
+    Microsoft::WRL::ComPtr<IDXGIFactory4> factory{};
     if (FAILED(create_dxgi_factory(IID_PPV_ARGS(&factory)))) {
         spdlog::error("Failed to create D3D12 Dummy DXGI Factory");
         return false;
@@ -118,7 +100,7 @@ bool D3D12Hook::hook() {
 
     spdlog::info("Creating dummy command queue");
 
-    ID3D12CommandQueue* command_queue{ nullptr };
+    Microsoft::WRL::ComPtr<ID3D12CommandQueue> command_queue{};
     if (FAILED(device->CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&command_queue)))) {
         spdlog::error("Failed to create D3D12 Dummy Command Queue");
         return false;
@@ -129,6 +111,18 @@ bool D3D12Hook::hook() {
     // used in CreateSwapChainForHwnd fallback
     HWND hwnd = 0;
     WNDCLASSEX wc{};
+
+    utility::ScopeGuard dummy_window_cleanup{[&]() {
+        if (hwnd) {
+            ::DestroyWindow(hwnd);
+            hwnd = nullptr;
+        }
+
+        if (wc.lpszClassName != nullptr) {
+            ::UnregisterClass(wc.lpszClassName, wc.hInstance);
+            wc.lpszClassName = nullptr;
+        }
+    }};
 
     auto init_dummy_window = [&]() {
         // fallback to CreateSwapChainForHwnd
@@ -169,15 +163,15 @@ bool D3D12Hook::hook() {
         // and all we're doing is creating a dummy swapchain
         // we don't want to screw up the overlay
         [&]() {
-            return !FAILED(factory->CreateSwapChainForComposition(command_queue, &swap_chain_desc1, nullptr, &swap_chain1));
+            return !FAILED(factory->CreateSwapChainForComposition(command_queue.Get(), &swap_chain_desc1, nullptr, &swap_chain1));
         },
         [&]() {
             init_dummy_window();
 
-            return !FAILED(factory->CreateSwapChainForHwnd(command_queue, hwnd, &swap_chain_desc1, nullptr, nullptr, &swap_chain1));
+            return !FAILED(factory->CreateSwapChainForHwnd(command_queue.Get(), hwnd, &swap_chain_desc1, nullptr, nullptr, &swap_chain1));
         },
         [&]() {
-            return !FAILED(factory->CreateSwapChainForHwnd(command_queue, GetDesktopWindow(), &swap_chain_desc1, nullptr, nullptr, &swap_chain1));
+            return !FAILED(factory->CreateSwapChainForHwnd(command_queue.Get(), GetDesktopWindow(), &swap_chain_desc1, nullptr, nullptr, &swap_chain1));
         },
     };
 
@@ -205,15 +199,6 @@ bool D3D12Hook::hook() {
 
     if (!any_succeed) {
         spdlog::error("Failed to create D3D12 Dummy Swap Chain");
-
-        if (hwnd) {
-            ::DestroyWindow(hwnd);
-        }
-
-        if (wc.lpszClassName != nullptr) {
-            ::UnregisterClass(wc.lpszClassName, wc.hInstance);
-        }
-
         return false;
     }
 
@@ -225,7 +210,7 @@ bool D3D12Hook::hook() {
     }
 
     try {
-        const auto ti = utility::rtti::get_type_info(swap_chain1);
+        const auto ti = utility::rtti::get_type_info(swap_chain1.Get());
         const auto swapchain_classname = ti != nullptr && ti->name() != nullptr ? std::string_view{ti->name()} : "unknown";
         const auto raw_name = ti != nullptr && ti->raw_name() != nullptr ? std::string_view{ti->raw_name()} : "unknown";
 
@@ -233,12 +218,12 @@ bool D3D12Hook::hook() {
         spdlog::info("Swapchain raw type info: {}", raw_name);
         
         if (swapchain_classname.contains("interposer::DXGISwapChain")) { // DLSS3
-            spdlog::info("Found Streamline (DLSSFG) swapchain during dummy initialization: {:x}", (uintptr_t)swap_chain1);
+            spdlog::info("Found Streamline (DLSSFG) swapchain during dummy initialization: {:x}", (uintptr_t)swap_chain1.Get());
             m_using_frame_generation_swapchain = true;
         }
         // Need to test this one to see if it actually has the same issues - disabling it for now
         /*else if (swapchain_classname.contains("FrameInterpolationSwapChain")) { // FSR3
-            spdlog::info("Found FSR3 swapchain during dummy initialization: {:x}", (uintptr_t)swap_chain1);
+            spdlog::info("Found FSR3 swapchain during dummy initialization: {:x}", (uintptr_t)swap_chain1.Get());
             m_using_frame_generation_swapchain = true;
         }*/
     } catch (const std::exception& e) {
@@ -253,7 +238,7 @@ bool D3D12Hook::hook() {
 
     // Find the command queue offset in the swapchain
     for (auto i = 0; i < 512 * sizeof(void*); i += sizeof(void*)) {
-        const auto base = (uintptr_t)swap_chain1 + i;
+        const auto base = (uintptr_t)swap_chain1.Get() + i;
 
         // reached the end
         if (IsBadReadPtr((void*)base, sizeof(void*))) {
@@ -262,14 +247,14 @@ bool D3D12Hook::hook() {
 
         auto data = *(ID3D12CommandQueue**)base;
 
-        if (data == command_queue) {
+        if (data == command_queue.Get()) {
             m_command_queue_offset = i;
             spdlog::info("Found command queue offset: {:x}", i);
             break;
         }
     }
 
-    auto target_swapchain = swap_chain;
+    auto target_swapchain = swap_chain.Get();
 
     // Scan throughout the swapchain for a valid pointer to scan through
     // this is usually only necessary for Proton
@@ -277,7 +262,7 @@ bool D3D12Hook::hook() {
         bool should_break = false;
 
         for (auto base = 0; base < 512 * sizeof(void*); base += sizeof(void*)) {
-            const auto pre_scan_base = (uintptr_t)swap_chain1 + base;
+            const auto pre_scan_base = (uintptr_t)swap_chain1.Get() + base;
 
             // reached the end
             if (IsBadReadPtr((void*)pre_scan_base, sizeof(void*))) {
@@ -299,7 +284,7 @@ bool D3D12Hook::hook() {
 
                 auto data = *(ID3D12CommandQueue**)pre_data;
 
-                if (data == command_queue) {
+                if (data == command_queue.Get()) {
                     // If we hook Streamline's Swapchain, the menu fails to render correctly/flickers
                     // So we switch out the swapchain with the internal one owned by Streamline
                     // Side note: Even though we are scanning for Proton here,
@@ -349,20 +334,6 @@ bool D3D12Hook::hook() {
     } catch (const std::exception& e) {
         spdlog::error("Failed to initialize hooks: {}", e.what());
         m_hooked = false;
-    }
-
-    device->Release();
-    command_queue->Release();
-    factory->Release();
-    swap_chain1->Release();
-    swap_chain->Release();
-
-    if (hwnd) {
-        ::DestroyWindow(hwnd);
-    }
-
-    if (wc.lpszClassName != nullptr) {
-        ::UnregisterClass(wc.lpszClassName, wc.hInstance);
     }
 
     return m_hooked;

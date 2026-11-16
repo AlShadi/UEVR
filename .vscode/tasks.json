@@ -105,6 +105,22 @@
                 "isDefault": true
             },
             "problemMatcher": []
+        },
+        {
+            "label": "Clean Build",
+            "type": "process",
+            "command": "powershell",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                "$ErrorActionPreference = 'Stop'; if (Test-Path -LiteralPath 'build') { Remove-Item -LiteralPath 'build' -Recurse -Force; Write-Host 'Removed build directory' } else { Write-Host 'build directory does not exist' }"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
         }
     ]
 }

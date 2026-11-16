@@ -29,93 +29,50 @@
 #include <sdk/UFunction.hpp>
 
 #include "IXRTrackingSystemHook.hpp"
+#include "UEVersion.hpp"
 
-detail::IXRTrackingSystemVT& get_tracking_system_vtable(std::optional<std::string> version_override = std::nullopt) {
-    const auto str_version = version_override.has_value() ? version_override.value() : utility::narrow(sdk::search_for_version(utility::get_executable()).value_or(L"0.00"));
+namespace {
+uevr::UEVersion resolve_engine_version(std::optional<std::string> version_override, bool log_version) {
+    const auto str_version = version_override.has_value()
+        ? *version_override
+        : utility::narrow(sdk::search_for_version(utility::get_executable()).value_or(L"0.00"));
     auto version = sdk::get_file_version_info();
 
     if (str_version != "0.00") {
-        SPDLOG_INFO("Found version {} from executable", str_version);
+        if (log_version) {
+            SPDLOG_INFO("Found version {} from executable", str_version);
+        }
         version.dwFileVersionMS = 0;
-    } else {
+    } else if (log_version) {
         SPDLOG_INFO("Found version {}.{} from executable (disk version)", HIWORD(version.dwFileVersionMS), LOWORD(version.dwFileVersionMS));
     }
 
-    // TODO: actually dump 5.4
-    if (version.dwFileVersionMS == 0x50004 || str_version.starts_with("5.4")) {
-        return ue5_3::IXRTrackingSystemVT::get();
+    return uevr::detect_ue_version(version.dwFileVersionMS, str_version);
+}
+} // namespace
+
+#define UEVR_DISPATCH_UE_4_18_PLUS_VT(ver, vt_type) \
+    switch (ver) { \
+    case uevr::UEVersion::UE5_4: return ue5_3::vt_type::get(); \
+    case uevr::UEVersion::UE5_3: return ue5_3::vt_type::get(); \
+    case uevr::UEVersion::UE5_2: return ue5_1::vt_type::get(); \
+    case uevr::UEVersion::UE5_1: return ue5_1::vt_type::get(); \
+    case uevr::UEVersion::UE5_0: return ue5_00::vt_type::get(); \
+    case uevr::UEVersion::UE4_27: return ue4_27::vt_type::get(); \
+    case uevr::UEVersion::UE4_26: return ue4_26::vt_type::get(); \
+    case uevr::UEVersion::UE4_25: return ue4_25::vt_type::get(); \
+    case uevr::UEVersion::UE4_24: return ue4_24::vt_type::get(); \
+    case uevr::UEVersion::UE4_23: return ue4_23::vt_type::get(); \
+    case uevr::UEVersion::UE4_22: return ue4_22::vt_type::get(); \
+    case uevr::UEVersion::UE4_21: return ue4_21::vt_type::get(); \
+    case uevr::UEVersion::UE4_20: return ue4_20::vt_type::get(); \
+    case uevr::UEVersion::UE4_19: return ue4_19::vt_type::get(); \
+    case uevr::UEVersion::UE4_18: return ue4_18::vt_type::get(); \
+    default: break; \
     }
 
-    // >= 5.3
-    if (version.dwFileVersionMS == 0x50003 || str_version.starts_with("5.3")) {
-        return ue5_3::IXRTrackingSystemVT::get();
-    }
-
-    // TODO: actually dump 5.2
-    // >= 5.2
-    if (version.dwFileVersionMS == 0x50002 || str_version.starts_with("5.2")) {
-        return ue5_1::IXRTrackingSystemVT::get();
-    }
-
-    // >= 5.1
-    if (version.dwFileVersionMS == 0x50001 || str_version.starts_with("5.1")) {
-        return ue5_1::IXRTrackingSystemVT::get();
-    }
-
-    // >= 5.0
-    if (version.dwFileVersionMS == 0x50000 || str_version.starts_with("5.0")) {
-        return ue5_00::IXRTrackingSystemVT::get();
-    }
-
-    // 4.27
-    if (version.dwFileVersionMS == 0x4001B || str_version.starts_with("4.27")) {
-        return ue4_27::IXRTrackingSystemVT::get();
-    }
-
-    // 4.26
-    if (version.dwFileVersionMS == 0x4001A || str_version.starts_with("4.26")) {
-        return ue4_26::IXRTrackingSystemVT::get();
-    }
-    
-    // 4.25
-    if (version.dwFileVersionMS == 0x40019 || str_version.starts_with("4.25")) {
-        return ue4_25::IXRTrackingSystemVT::get();
-    }
-
-    // 4.24
-    if (version.dwFileVersionMS == 0x40018 || str_version.starts_with("4.24")) {
-        return ue4_24::IXRTrackingSystemVT::get();
-    }
-
-    // 4.23
-    if (version.dwFileVersionMS == 0x40017 || str_version.starts_with("4.23")) {
-        return ue4_23::IXRTrackingSystemVT::get();
-    }
-
-    // 4.22
-    if (version.dwFileVersionMS == 0x40016 || str_version.starts_with("4.22")) {
-        return ue4_22::IXRTrackingSystemVT::get();
-    }
-
-    // 4.21
-    if (version.dwFileVersionMS == 0x40015 || str_version.starts_with("4.21")) {
-        return ue4_21::IXRTrackingSystemVT::get();
-    }
-
-    // 4.20
-    if (version.dwFileVersionMS == 0x40014 || str_version.starts_with("4.20")) {
-        return ue4_20::IXRTrackingSystemVT::get();
-    }
-
-    // 4.19
-    if (version.dwFileVersionMS == 0x40013 || str_version.starts_with("4.19")) {
-        return ue4_19::IXRTrackingSystemVT::get();
-    }
-
-    // 4.18
-    if (version.dwFileVersionMS == 0x40012 || str_version.starts_with("4.18")) {
-        return ue4_18::IXRTrackingSystemVT::get();
-    }
+detail::IXRTrackingSystemVT& get_tracking_system_vtable(std::optional<std::string> version_override = std::nullopt) {
+    UEVR_DISPATCH_UE_4_18_PLUS_VT(resolve_engine_version(std::move(version_override), true), IXRTrackingSystemVT);
 
     // versions lower than 4.18 do not have IXRTrackingSystem
     return detail::IXRTrackingSystemVT::get();
@@ -123,219 +80,30 @@ detail::IXRTrackingSystemVT& get_tracking_system_vtable(std::optional<std::strin
 
 
 detail::IXRCameraVT& get_camera_vtable(std::optional<std::string> version_override = std::nullopt) {
-    const auto str_version = version_override.has_value() ? version_override.value() : utility::narrow(sdk::search_for_version(utility::get_executable()).value_or(L"0.00"));
-    auto version = sdk::get_file_version_info();
-
-    if (str_version != "0.00") {
-        version.dwFileVersionMS = 0;
-    }
-
-    // TODO: actually dump 5.4
-    if (version.dwFileVersionMS == 0x50004 || str_version.starts_with("5.4")) {
-        return ue5_3::IXRCameraVT::get();
-    }
-
-    // TODO: actually dump 5.2
-    if (version.dwFileVersionMS == 0x50003 || str_version.starts_with("5.3")) {
-        return ue5_3::IXRCameraVT::get();
-    }
-
-    // >= 5.2
-    if (version.dwFileVersionMS == 0x50002 || str_version.starts_with("5.2")) {
-        return ue5_1::IXRCameraVT::get();
-    }
-
-    // >= 5.1
-    if (version.dwFileVersionMS == 0x50001 || str_version.starts_with("5.1")) {
-        return ue5_1::IXRCameraVT::get();
-    }
-
-    // >= 5.0
-    if (version.dwFileVersionMS == 0x50000 || str_version.starts_with("5.0")) {
-        return ue5_00::IXRCameraVT::get();
-    }
-
-    // 4.27
-    if (version.dwFileVersionMS == 0x4001B || str_version.starts_with("4.27")) {
-        return ue4_27::IXRCameraVT::get();
-    }
-
-    // 4.26
-    if (version.dwFileVersionMS == 0x4001A || str_version.starts_with("4.26")) {
-        return ue4_26::IXRCameraVT::get();
-    }
-
-    // 4.25
-    if (version.dwFileVersionMS == 0x40019 || str_version.starts_with("4.25")) {
-        return ue4_25::IXRCameraVT::get();
-    }
-
-    // 4.24
-    if (version.dwFileVersionMS == 0x40018 || str_version.starts_with("4.24")) {
-        return ue4_24::IXRCameraVT::get();
-    }
-
-    // 4.23
-    if (version.dwFileVersionMS == 0x40017 || str_version.starts_with("4.23")) {
-        return ue4_23::IXRCameraVT::get();
-    }
-
-    // 4.22
-    if (version.dwFileVersionMS == 0x40016 || str_version.starts_with("4.22")) {
-        return ue4_22::IXRCameraVT::get();
-    }
-
-    // 4.21
-    if (version.dwFileVersionMS == 0x40015 || str_version.starts_with("4.21")) {
-        return ue4_21::IXRCameraVT::get();
-    }
-
-    // 4.20
-    if (version.dwFileVersionMS == 0x40014 || str_version.starts_with("4.20")) {
-        return ue4_20::IXRCameraVT::get();
-    }
-
-    // 4.19
-    if (version.dwFileVersionMS == 0x40013 || str_version.starts_with("4.19")) {
-        return ue4_19::IXRCameraVT::get();
-    }
-
-    // 4.18
-    if (version.dwFileVersionMS == 0x40012 || str_version.starts_with("4.18")) {
-        return ue4_18::IXRCameraVT::get();
-    }
+    UEVR_DISPATCH_UE_4_18_PLUS_VT(resolve_engine_version(std::move(version_override), false), IXRCameraVT);
 
     // Versions lower than 4.18 do not have IXRCamera
     return detail::IXRCameraVT::get();
 }
 
 detail::IHeadMountedDisplayVT& get_hmd_vtable(std::optional<std::string> version_override = std::nullopt) {
-    const auto str_version = version_override.has_value() ? version_override.value() : utility::narrow(sdk::search_for_version(utility::get_executable()).value_or(L"0.00"));
-    auto version = sdk::get_file_version_info();
+    const auto ver = resolve_engine_version(std::move(version_override), false);
+    UEVR_DISPATCH_UE_4_18_PLUS_VT(ver, IHeadMountedDisplayVT);
 
-    if (str_version != "0.00") {
-        version.dwFileVersionMS = 0;
+    switch (ver) {
+    case uevr::UEVersion::UE4_17: return ue4_17::IHeadMountedDisplayVT::get();
+    case uevr::UEVersion::UE4_16: return ue4_16::IHeadMountedDisplayVT::get();
+    case uevr::UEVersion::UE4_15: return ue4_15::IHeadMountedDisplayVT::get();
+    case uevr::UEVersion::UE4_14: return ue4_14::IHeadMountedDisplayVT::get();
+    case uevr::UEVersion::UE4_13: return ue4_13::IHeadMountedDisplayVT::get();
+    case uevr::UEVersion::UE4_12: return ue4_12::IHeadMountedDisplayVT::get();
+    case uevr::UEVersion::UE4_11: return ue4_11::IHeadMountedDisplayVT::get();
+    case uevr::UEVersion::UE4_10: return ue4_10::IHeadMountedDisplayVT::get();
+    default: return detail::IHeadMountedDisplayVT::get();
     }
-
-    // TODO: actually dump 5.4
-    // 5.4
-    if (version.dwFileVersionMS == 0x50004 || str_version.starts_with("5.4")) {
-        return ue5_3::IHeadMountedDisplayVT::get();
-    }
-
-    // 5.3
-    if (version.dwFileVersionMS == 0x50003 || str_version.starts_with("5.3")) {
-        return ue5_3::IHeadMountedDisplayVT::get();
-    }
-
-    // TODO: actually dump 5.2
-    // >= 5.2
-    if (version.dwFileVersionMS == 0x50002 || str_version.starts_with("5.2")) {
-        return ue5_1::IHeadMountedDisplayVT::get();
-    }
-
-    // >= 5.1
-    if (version.dwFileVersionMS == 0x50001 || str_version.starts_with("5.1")) {
-        return ue5_1::IHeadMountedDisplayVT::get();
-    }
-
-    // >= 5.0
-    if (version.dwFileVersionMS == 0x50000 || str_version.starts_with("5.0")) {
-        return ue5_00::IHeadMountedDisplayVT::get();
-    }
-
-    // 4.27
-    if (version.dwFileVersionMS == 0x4001B || str_version.starts_with("4.27")) {
-        return ue4_27::IHeadMountedDisplayVT::get();
-    }
-
-    // 4.26
-    if (version.dwFileVersionMS == 0x4001A || str_version.starts_with("4.26")) {
-        return ue4_26::IHeadMountedDisplayVT::get();
-    }
-
-    // 4.25
-    if (version.dwFileVersionMS == 0x40019 || str_version.starts_with("4.25")) {
-        return ue4_25::IHeadMountedDisplayVT::get();
-    }
-
-    // 4.24
-    if (version.dwFileVersionMS == 0x40018 || str_version.starts_with("4.24")) {
-        return ue4_24::IHeadMountedDisplayVT::get();
-    }
-
-    // 4.23
-    if (version.dwFileVersionMS == 0x40017 || str_version.starts_with("4.23")) {
-        return ue4_23::IHeadMountedDisplayVT::get();
-    }
-
-    // 4.22
-    if (version.dwFileVersionMS == 0x40016 || str_version.starts_with("4.22")) {
-        return ue4_22::IHeadMountedDisplayVT::get();
-    }
-
-    // 4.21
-    if (version.dwFileVersionMS == 0x40015 || str_version.starts_with("4.21")) {
-        return ue4_21::IHeadMountedDisplayVT::get();
-    }
-
-    // 4.20
-    if (version.dwFileVersionMS == 0x40014 || str_version.starts_with("4.20")) {
-        return ue4_20::IHeadMountedDisplayVT::get();
-    }
-
-    // 4.19
-    if (version.dwFileVersionMS == 0x40013 || str_version.starts_with("4.19")) {
-        return ue4_19::IHeadMountedDisplayVT::get();
-    }
-
-    // 4.18
-    if (version.dwFileVersionMS == 0x40012 || str_version.starts_with("4.18")) {
-        return ue4_18::IHeadMountedDisplayVT::get();
-    }
-
-    // 4.17
-    if (version.dwFileVersionMS == 0x40011 || str_version.starts_with("4.17")) {
-        return ue4_17::IHeadMountedDisplayVT::get();
-    }
-
-    // 4.16
-    if (version.dwFileVersionMS == 0x40010 || str_version.starts_with("4.16")) {
-        return ue4_16::IHeadMountedDisplayVT::get();
-    }
-
-    // 4.15
-    if (version.dwFileVersionMS == 0x4000F || str_version.starts_with("4.15")) {
-        return ue4_15::IHeadMountedDisplayVT::get();
-    }
-
-    // 4.14
-    if (version.dwFileVersionMS == 0x4000E || str_version.starts_with("4.14")) {
-        return ue4_14::IHeadMountedDisplayVT::get();
-    }
-
-    // 4.13
-    if (version.dwFileVersionMS == 0x4000D || str_version.starts_with("4.13")) {
-        return ue4_13::IHeadMountedDisplayVT::get();
-    }
-
-    // 4.12
-    if (version.dwFileVersionMS == 0x4000C || str_version.starts_with("4.12")) {
-        return ue4_12::IHeadMountedDisplayVT::get();
-    }
-
-    // 4.11
-    if (version.dwFileVersionMS == 0x4000B || str_version.starts_with("4.11")) {
-        return ue4_11::IHeadMountedDisplayVT::get();
-    }
-
-    // 4.10
-    if (version.dwFileVersionMS == 0x4000A || str_version.starts_with("4.10")) {
-        return ue4_10::IHeadMountedDisplayVT::get();
-    }
-
-    return detail::IHeadMountedDisplayVT::get();
 }
+
+#undef UEVR_DISPATCH_UE_4_18_PLUS_VT
 
 IXRTrackingSystemHook* g_hook = nullptr;
 

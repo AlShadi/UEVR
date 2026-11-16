@@ -1715,6 +1715,8 @@ void PluginLoader::early_init() try {
     namespace fs = std::filesystem;
 
     std::scoped_lock _{m_mux};
+    m_plugin_load_errors.clear();
+    m_plugin_load_warnings.clear();
     std::wstring module_path{};
 
     module_path.resize(1024, 0);
@@ -1743,7 +1745,7 @@ void PluginLoader::early_init() try {
             auto&& path = entry.path();
 
             if (path.has_extension() && path.extension() == ".dll") {
-                auto module = LoadLibrary(path.string().c_str());
+                auto module = LoadLibraryW(path.c_str());
 
                 if (module == nullptr) {
                     spdlog::error("[PluginLoader] Failed to load {}", path.string());
@@ -1876,12 +1878,31 @@ std::optional<std::string> PluginLoader::on_initialize_d3d_thread() {
 }
 
 void PluginLoader::attempt_unload_plugins() {
+    using UEVR_PluginShutdownFn = void (*)();
+
     {
         std::unique_lock _{m_api_cb_mtx};
 
-        for (auto& callbacks : m_plugin_callback_lists) {
-            callbacks->clear();
+        for (auto& [name, module] : m_plugins) {
+            if (module == nullptr) {
+                continue;
+            }
+
+            const auto shutdown_fn = reinterpret_cast<UEVR_PluginShutdownFn>(
+                GetProcAddress(module, "uevr_plugin_shutdown")
+            );
+            if (shutdown_fn != nullptr) {
+                try {
+                    shutdown_fn();
+                } catch (...) {
+                    spdlog::error("[PluginLoader] Exception occurred in uevr_plugin_shutdown for {}", name);
+                }
+            }
         }
+
+        for_each_callback_list([](auto& callbacks) {
+            callbacks.clear();
+        });
 
         {
             std::unique_lock _{m_ufunction_hooks_mtx};

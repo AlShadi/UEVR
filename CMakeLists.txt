@@ -722,6 +722,7 @@ set(uevr_SOURCES "")
 list(APPEND uevr_SOURCES
 	"src/ExceptionHandler.cpp"
 	"src/Framework.cpp"
+	"src/FrameworkD3D.cpp"
 	"src/Main.cpp"
 	"src/Mod.cpp"
 	"src/Mods.cpp"
@@ -772,6 +773,7 @@ list(APPEND uevr_SOURCES
 	"src/hooks/D3D11Hook.hpp"
 	"src/hooks/D3D12Hook.hpp"
 	"src/hooks/DInputHook.hpp"
+	"src/hooks/HookUtils.hpp"
 	"src/hooks/WindowsMessageHook.hpp"
 	"src/hooks/XInputHook.hpp"
 	"src/mods/FrameworkConfig.hpp"
@@ -796,6 +798,7 @@ list(APPEND uevr_SOURCES
 	"src/mods/vr/IXRTrackingSystemHook.hpp"
 	"src/mods/vr/OverlayComponent.hpp"
 	"src/mods/vr/RenderTargetPoolHook.hpp"
+	"src/mods/vr/UEVersion.hpp"
 	"src/mods/vr/d3d12/ComPtr.hpp"
 	"src/mods/vr/d3d12/CommandContext.hpp"
 	"src/mods/vr/d3d12/DirectXTK.hpp"
@@ -901,6 +904,63 @@ add_custom_command(
 add_custom_command(
     TARGET uevr POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:openvr> $<TARGET_FILE_DIR:uevr>)
+
+enable_testing()
+add_test(NAME uevr-tests COMMAND uevr-tests)
+
+unset(CMKR_TARGET)
+unset(CMKR_SOURCES)
+
+# Target uevr-tests
+set(CMKR_TARGET uevr-tests)
+set(uevr-tests_SOURCES "")
+
+list(APPEND uevr-tests_SOURCES
+	"tests/main.cpp"
+)
+
+list(APPEND uevr-tests_SOURCES
+	cmake.toml
+)
+
+set(CMKR_SOURCES ${uevr-tests_SOURCES})
+add_executable(uevr-tests)
+
+if(uevr-tests_SOURCES)
+	target_sources(uevr-tests PRIVATE ${uevr-tests_SOURCES})
+endif()
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT uevr-tests)
+endif()
+
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${uevr-tests_SOURCES})
+
+target_compile_features(uevr-tests PRIVATE
+	cxx_std_23
+)
+
+target_compile_options(uevr-tests PRIVATE
+	"/bigobj"
+	"/EHa"
+	"/MP"
+)
+
+target_include_directories(uevr-tests PRIVATE
+	"shared/"
+	"src/"
+	"include/"
+	"dependencies/submodules/UESDK/src"
+	"lua-api/lib/include"
+)
+
+target_link_libraries(uevr-tests PRIVATE
+	kananlib
+	glm
+	nlohmann_json
+	luavrlib
+)
 
 unset(CMKR_TARGET)
 unset(CMKR_SOURCES)

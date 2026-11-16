@@ -46,8 +46,22 @@ jobs:
       - name: Configure CMake
         run: cmake -S ${{github.workspace}} -B ${{github.workspace}}/build -G "Visual Studio 18 2026" -A x64 -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
 
-      - name: Build
-        run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --target ${{matrix.target}}
+      - name: Build C++ targets
+        run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --target ${{matrix.target}} vr-plugin-nullifier LuaVR example_plugin uevr-tests
+
+      - name: Run C++ tests
+        run: ctest --test-dir ${{github.workspace}}/build -C ${{env.BUILD_TYPE}} --output-on-failure
+
+      - name: Set up dotnet
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build frontend
+        run: dotnet build ${{github.workspace}}/frontend/UEVR/UEVR.csproj --configuration ${{env.BUILD_TYPE}}
+
+      - name: Run C# tests
+        run: dotnet run --project ${{github.workspace}}/frontend/UEVR.Tests/UEVR.Tests.csproj --configuration ${{env.BUILD_TYPE}}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8

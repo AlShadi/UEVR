@@ -58,11 +58,11 @@ LONG WINAPI framework::global_exception_handler(struct _EXCEPTION_POINTERS* ei) 
     auto dbghelp = LoadLibrary("dbghelp.dll");
 
     if (dbghelp) {
-        const auto final_path = Framework::get_persistent_dir("crash.dmp").string();
+        const auto final_path = Framework::get_persistent_dir("crash.dmp");
 
-        spdlog::error("Attempting to write dump to {}", final_path);
+        spdlog::error("Attempting to write dump to {}", final_path.string());
 
-        auto f = CreateFile(final_path.c_str(), 
+        auto f = CreateFileW(final_path.c_str(), 
             GENERIC_WRITE, 
             FILE_SHARE_WRITE, 
             nullptr, 

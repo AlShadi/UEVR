@@ -15,6 +15,7 @@
 
 #include <sdk/threading/ThreadWorker.hpp>
 #include <mods/vr/d3d12/CommandContext.hpp>
+#include <UEVRSharedMemoryData.hpp>
 
 class Mods;
 class VR;
@@ -43,15 +44,8 @@ public:
         CloseHandle(m_memory);
     }
 
-    #pragma pack(push, 1)
-    struct Data {
-        wchar_t path[MAX_PATH]{}; // Path to the game exe
-        uint32_t pid{}; // Process ID of the game
-        uint32_t main_thread_id{}; // Main thread ID of the game
-        uint32_t command_thread_id{}; // Thread ID commands are sent to (via PostThreadMessage)
-        bool signal_frontend_config_setup{false};
-    };
-    #pragma pack(pop)
+    using Data = UEVRSharedMemoryData;
+    static_assert(sizeof(Data::path) == MAX_PATH * sizeof(wchar_t), "Shared memory path buffer must match MAX_PATH");
 
     Data& data() {
         return *m_data;
@@ -103,6 +97,7 @@ public:
 
     void run_imgui_frame(bool from_present);
 
+    void on_post_present();
     void on_frame_d3d11();
     void on_post_present_d3d11();
     void on_frame_d3d12();

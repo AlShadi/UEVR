@@ -291,4 +291,25 @@ add_custom_command(
     TARGET uevr POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:openvr> $<TARGET_FILE_DIR:uevr>)
 
+enable_testing()
+add_test(NAME uevr-tests COMMAND uevr-tests)
 """
+
+[target.uevr-tests]
+type = "executable"
+compile-features = ["cxx_std_23"]
+compile-options = ["/bigobj", "/EHa", "/MP"]
+include-directories = [
+    "shared/",
+    "src/",
+    "include/",
+    "dependencies/submodules/UESDK/src",
+    "lua-api/lib/include"
+]
+sources = ["tests/main.cpp"]
+link-libraries = [
+    "kananlib",
+    "glm",
+    "nlohmann_json",
+    "luavrlib"
+]
