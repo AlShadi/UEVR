@@ -5125,9 +5125,9 @@ __forceinline Matrix4x4f* FFakeStereoRenderingHook::calculate_stereo_projection_
         g_hook->m_calculate_stereo_projection_matrix_hook.call<Matrix4x4f*>(stereo, out, view_index);
     } else {
         if (g_hook->m_has_double_precision) {
-            (*out)[3][2] = sdk::globals::get_near_clipping_plane();
-        } else {
             (*(Matrix4x4d*)out)[3][2] = (double)sdk::globals::get_near_clipping_plane();
+        } else {
+            (*out)[3][2] = sdk::globals::get_near_clipping_plane();
         }
     }
 
@@ -6645,7 +6645,7 @@ void VRRenderTargetManager_Base::pre_texture_hook_callback(safetyhook::Context& 
                 SPDLOG_INFO("Possible UE 5.0.3 detected, not 5.1 or above");
                 rtm->is_using_texture_desc = false;
                 rtm->is_version_5_0_3 = true;
-                rtm->is_version_greq_5_1;
+                rtm->is_version_greq_5_1 = false;
             }
         }
 
@@ -7897,6 +7897,7 @@ bool VRRenderTargetManager_Base::allocate_render_target_texture(uintptr_t return
                                 size_t insn_count = 0;
                                 bool encountered_branch = false;
                                 utility::exhaustive_decode((uint8_t*)fn, 200, [&](const utility::ExhaustionContext& ctx) -> utility::ExhaustionResult {
+                                    ++insn_count;
                                     if (std::string_view{ctx.instrux.Mnemonic}.starts_with("CALL") || std::string_view{ctx.instrux.Mnemonic}.starts_with("JMP")) {
                                         encountered_branch = true;
                                         return utility::ExhaustionResult::BREAK;

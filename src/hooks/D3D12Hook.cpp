@@ -409,7 +409,9 @@ HRESULT D3D12Hook::present_internal(IDXGISwapChain3* swap_chain, UINT sync_inter
     d3d12->m_inside_present = true;
     d3d12->m_swap_chain = swap_chain;
 
-    swap_chain->GetDevice(IID_PPV_ARGS(&d3d12->m_device));
+    if (SUCCEEDED(swap_chain->GetDevice(IID_PPV_ARGS(&d3d12->m_device))) && d3d12->m_device != nullptr) {
+        d3d12->m_device->Release();
+    }
 
     if (d3d12->m_device != nullptr) {
         if (d3d12->m_using_proton_swapchain) {

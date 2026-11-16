@@ -119,7 +119,9 @@ HRESULT WINAPI D3D11Hook::present(IDXGISwapChain* swap_chain, UINT sync_interval
         return present_fn(swap_chain, sync_interval, flags);
     }*/
 
-    swap_chain->GetDevice(__uuidof(d3d11->m_device), (void**)&d3d11->m_device);
+    if (SUCCEEDED(swap_chain->GetDevice(__uuidof(d3d11->m_device), (void**)&d3d11->m_device)) && d3d11->m_device != nullptr) {
+        d3d11->m_device->Release();
+    }
 
     /*if (d3d11->m_set_render_targets_hook == nullptr) {
         ComPtr<ID3D11DeviceContext> context{};

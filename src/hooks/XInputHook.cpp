@@ -14,10 +14,10 @@
 XInputHook* g_hook{nullptr};
 
 namespace {
-HMODULE find_dll(const std::string& name) {
+HMODULE find_dll(std::stop_token s, const std::string& name) {
     const auto start_time = std::chrono::steady_clock::now();
 
-    while (true) {
+    while (!s.stop_requested()) {
         if (const auto found_dll = GetModuleHandleA(name.c_str()); found_dll != nullptr) {
             return found_dll;
         }
@@ -31,6 +31,8 @@ HMODULE find_dll(const std::string& name) {
         // Avoid spinning a core while waiting for delayed XInput module load.
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
+
+    return nullptr;
 }
 
 uintptr_t recursive_resolve_jmp(uint8_t* instr) {
@@ -98,6 +100,7 @@ void hook_with_jmp_fallback(
 }
 
 void hook_xinput_dll(
+    std::stop_token s,
     const std::string& dll_name,
     std::string_view tag,
     SafetyHookInline& get_state_hook,
@@ -105,8 +108,8 @@ void hook_xinput_dll(
     SafetyHookInline& set_state_hook,
     void* set_state_detour
 ) {
-    const auto dll = find_dll(dll_name);
-    if (dll != nullptr) {
+    const auto dll = find_dll(s, dll_name);
+    if (dll != nullptr && !s.stop_requested()) {
         std::scoped_lock _{g_framework->get_hook_monitor_mutex()};
 
         const auto get_state_fn = (void*)GetProcAddress(dll, "XInputGetState");
@@ -155,8 +158,9 @@ XInputHook::XInputHook() {
     // We use a thread because this may possibly take a while to search for the DLLs
     // and it shouldn't cause any issues anyway
     spdlog::info("[XInputHook] Starting hook thread");
-    m_hook_thread_1_4 = std::make_unique<std::jthread>([this]() {
+    m_hook_thread_1_4 = std::make_unique<std::jthread>([this](std::stop_token s) {
         hook_xinput_dll(
+            s,
             "xinput1_4.dll",
             "1_4",
             m_xinput_1_4_get_state_hook,
@@ -165,8 +169,9 @@ XInputHook::XInputHook() {
             (void*)&set_state_hook_1_4
         );
     });
-    m_hook_thread_1_3 = std::make_unique<std::jthread>([this]() {
+    m_hook_thread_1_3 = std::make_unique<std::jthread>([this](std::stop_token s) {
         hook_xinput_dll(
+            s,
             "xinput1_3.dll",
             "1_3",
             m_xinput_1_3_get_state_hook,

@@ -4,6 +4,7 @@
 #include <mutex>
 #include <memory>
 #include <array>
+#include <thread>
 
 #ifndef DIRECTINPUT_VERSION
 #define DIRECTINPUT_VERSION 0x0800
@@ -43,4 +44,5 @@ private:
 
     safetyhook::InlineHook m_create_hook{};
     std::unique_ptr<PointerHook> m_enum_devices_hook{};
+    std::unique_ptr<std::jthread> m_hook_thread{};
 };

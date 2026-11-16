@@ -12,6 +12,11 @@
 
 #include "ExceptionHandler.hpp"
 
+namespace {
+HMODULE g_dbghelp_module{nullptr};
+wchar_t g_crash_dump_path[MAX_PATH]{};
+} // namespace
+
 LONG WINAPI framework::global_exception_handler(struct _EXCEPTION_POINTERS* ei) {
     spdlog::flush_on(spdlog::level::err);
 
@@ -55,14 +60,14 @@ LONG WINAPI framework::global_exception_handler(struct _EXCEPTION_POINTERS* ei) 
         spdlog::error("Module: Unknown");
     }
 
-    auto dbghelp = LoadLibrary("dbghelp.dll");
+    auto dbghelp = g_dbghelp_module != nullptr ? g_dbghelp_module : LoadLibrary("dbghelp.dll");
 
     if (dbghelp) {
-        const auto final_path = Framework::get_persistent_dir("crash.dmp");
+        const wchar_t* dump_path_w = g_crash_dump_path[0] != L'\0'
+            ? g_crash_dump_path
+            : L"crash.dmp";
 
-        spdlog::error("Attempting to write dump to {}", final_path.string());
-
-        auto f = CreateFileW(final_path.c_str(), 
+        auto f = CreateFileW(dump_path_w, 
             GENERIC_WRITE, 
             FILE_SHARE_WRITE, 
             nullptr, 
@@ -84,14 +89,16 @@ LONG WINAPI framework::global_exception_handler(struct _EXCEPTION_POINTERS* ei) 
 
         auto minidump_write_dump = (decltype(MiniDumpWriteDump)*)GetProcAddress(dbghelp, "MiniDumpWriteDump");
 
-        minidump_write_dump(GetCurrentProcess(), 
-            GetCurrentProcessId(),
-            f,
-            MINIDUMP_TYPE::MiniDumpNormal, 
-            &ei_info, 
-            nullptr, 
-            nullptr
-        );
+        if (minidump_write_dump != nullptr) {
+            minidump_write_dump(GetCurrentProcess(), 
+                GetCurrentProcessId(),
+                f,
+                MINIDUMP_TYPE::MiniDumpNormal, 
+                &ei_info, 
+                nullptr, 
+                nullptr
+            );
+        }
 
         CloseHandle(f);
     } else {
@@ -102,5 +109,11 @@ LONG WINAPI framework::global_exception_handler(struct _EXCEPTION_POINTERS* ei) 
 }
 
 void framework::setup_exception_handler() {
+    g_dbghelp_module = LoadLibraryA("dbghelp.dll");
+    const auto final_path = Framework::get_persistent_dir("crash.dmp").wstring();
+    const auto copy_len = std::min<size_t>(final_path.size(), MAX_PATH - 1);
+    std::wmemcpy(g_crash_dump_path, final_path.data(), copy_len);
+    g_crash_dump_path[copy_len] = L'\0';
+
     SetUnhandledExceptionFilter(global_exception_handler);
 }

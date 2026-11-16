@@ -7,11 +7,13 @@
 #include <vector>
 
 #include <UEVRSharedMemoryData.hpp>
+#include <WindowFilter.hpp>
 #include <mods/vr/UEVersion.hpp>
 #include <sdk/Math.hpp>
 #include <utility/Config.hpp>
 #include <ScriptState.hpp>
 #include <uevr/API.h>
+#include <uevr/API.hpp>
 
 namespace {
 int g_failures = 0;
@@ -93,6 +95,11 @@ struct StubLuaHost {
         param.lua = &lua_data;
     }
 };
+
+StubLuaHost& shared_stub_host() {
+    static StubLuaHost host{};
+    return host;
+}
 } // namespace
 
 TEST_CASE("SharedMemoryData ABI layout") {
@@ -155,7 +162,7 @@ TEST_CASE("sdk::Math coordinate conversions") {
 }
 
 TEST_CASE("ScriptState os sandbox and GC lifecycle") {
-    StubLuaHost host;
+    auto& host = shared_stub_host();
     uevr::ScriptState::GarbageCollectionData gc{};
     gc.gc_handler = uevr::ScriptState::GarbageCollectionHandler::UEVR_MANAGED;
     gc.gc_type = uevr::ScriptState::GarbageCollectionType::STEP;
@@ -186,6 +193,9 @@ TEST_CASE("ScriptState os sandbox and GC lifecycle") {
 }
 
 TEST_CASE("UEVersion detection from file version and string override") {
+    REQUIRE(uevr::detect_ue_version(0, "5.7.0") == uevr::UEVersion::UE5_7);
+    REQUIRE(uevr::detect_ue_version(0, "5.6.1") == uevr::UEVersion::UE5_6);
+    REQUIRE(uevr::detect_ue_version(0, "5.5.4") == uevr::UEVersion::UE5_5);
     REQUIRE(uevr::detect_ue_version(0, "5.4.1-release") == uevr::UEVersion::UE5_4);
     REQUIRE(uevr::detect_ue_version(0, "5.3.2") == uevr::UEVersion::UE5_3);
     REQUIRE(uevr::detect_ue_version(0, "5.0.3") == uevr::UEVersion::UE5_0);
@@ -193,12 +203,116 @@ TEST_CASE("UEVersion detection from file version and string override") {
     REQUIRE(uevr::detect_ue_version(0, "4.18.0") == uevr::UEVersion::UE4_18);
     REQUIRE(uevr::detect_ue_version(0, "4.10.4") == uevr::UEVersion::UE4_10);
 
-    // String override passes file_version_ms == 0, while disk fallback checks dwFileVersionMS.
+    // String override takes precedence even if file_version_ms has a higher version value.
+    REQUIRE(uevr::detect_ue_version(0x50004, "4.27.2") == uevr::UEVersion::UE4_27);
+
+    // Disk fallback checks dwFileVersionMS when str_version is "0.00" or empty.
+    REQUIRE(uevr::detect_ue_version(0x50007, "0.00") == uevr::UEVersion::UE5_7);
+    REQUIRE(uevr::detect_ue_version(0x50006, "0.00") == uevr::UEVersion::UE5_6);
+    REQUIRE(uevr::detect_ue_version(0x50005, "0.00") == uevr::UEVersion::UE5_5);
     REQUIRE(uevr::detect_ue_version(0x50003, "0.00") == uevr::UEVersion::UE5_3);
     REQUIRE(uevr::detect_ue_version(0x4001B, "0.00") == uevr::UEVersion::UE4_27);
     REQUIRE(uevr::detect_ue_version(0x40012, "0.00") == uevr::UEVersion::UE4_18);
     REQUIRE(uevr::detect_ue_version(0x4000A, "0.00") == uevr::UEVersion::UE4_10);
     REQUIRE(uevr::detect_ue_version(0x40009, "4.9.0") == uevr::UEVersion::Unknown);
+}
+
+TEST_CASE("WindowFilter worker thread stays alive after empty tick") {
+    WindowFilter filter{};
+
+    auto pump_messages_for = [](std::chrono::milliseconds duration) {
+        const auto deadline = std::chrono::steady_clock::now() + duration;
+        while (std::chrono::steady_clock::now() < deadline) {
+            MSG msg{};
+            while (PeekMessageA(&msg, nullptr, 0, 0, PM_REMOVE)) {
+                TranslateMessage(&msg);
+                DispatchMessageA(&msg);
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    };
+
+    // Wait >150ms so the worker thread executes at least one empty tick.
+    pump_messages_for(std::chrono::milliseconds(160));
+
+    HWND normal_hwnd = CreateWindowExA(0, "STATIC", "NormalGameWindow", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, nullptr, nullptr);
+    HWND filtered_hwnd = CreateWindowExA(0, "STATIC", "UE4SS Console", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, nullptr, nullptr);
+    REQUIRE(normal_hwnd != nullptr);
+    REQUIRE(filtered_hwnd != nullptr);
+
+    // Initial check queues both windows and filters them until the background job completes.
+    REQUIRE(filter.is_filtered(normal_hwnd) == true);
+    REQUIRE(filter.is_filtered(filtered_hwnd) == true);
+
+    pump_messages_for(std::chrono::milliseconds(160));
+
+    // After the background job runs, normal_hwnd must be unfiltered while UE4SS remains filtered.
+    REQUIRE(filter.is_filtered(normal_hwnd) == false);
+    REQUIRE(filter.is_filtered(filtered_hwnd) == true);
+
+    DestroyWindow(normal_hwnd);
+    DestroyWindow(filtered_hwnd);
+}
+
+TEST_CASE("API::VR::trigger_haptic_vibration parameter order and Lua quaternion offset") {
+    static float s_seconds = 0.0f;
+    static float s_duration = 0.0f;
+    static float s_frequency = 0.0f;
+    static float s_amplitude = 0.0f;
+    static UEVR_Quaternionf s_rot_offset{};
+
+    auto& host = shared_stub_host();
+    host.vr.trigger_haptic_vibration = [](float seconds_from_now, float duration, float frequency, float amplitude, UEVR_InputSourceHandle) {
+        s_seconds = seconds_from_now;
+        s_duration = duration;
+        s_frequency = frequency;
+        s_amplitude = amplitude;
+    };
+    host.vr.is_using_controllers = []() { return true; };
+
+    UEVR_UObjectHookMotionControllerStateFunctions mc_funcs{};
+    mc_funcs.set_rotation_offset = [](UEVR_UObjectHookMotionControllerStateHandle, const UEVR_Quaternionf* quat) {
+        if (quat != nullptr) {
+            s_rot_offset = *quat;
+        }
+    };
+    UEVR_UObjectHookFunctions uobj_hook_funcs{};
+    uobj_hook_funcs.mc_state = &mc_funcs;
+    uobj_hook_funcs.get_or_add_motion_controller_state = [](UEVR_UObjectHandle) -> UEVR_UObjectHookMotionControllerStateHandle {
+        static int dummy_state = 1;
+        return reinterpret_cast<UEVR_UObjectHookMotionControllerStateHandle>(&dummy_state);
+    };
+    host.sdk.uobject_hook = &uobj_hook_funcs;
+
+    uevr::API::initialize(&host.param);
+    uevr::API::VR::trigger_haptic_vibration(0.125f, 1.75f, 160.0f, 0.85f, nullptr);
+    REQUIRE_NEAR(s_seconds, 0.125f, 1e-5f);
+    REQUIRE_NEAR(s_duration, 1.75f, 1e-5f);
+    REQUIRE_NEAR(s_frequency, 160.0f, 1e-5f);
+    REQUIRE_NEAR(s_amplitude, 0.85f, 1e-5f);
+    REQUIRE(uevr::API::VR::is_using_controllers() == true);
+    REQUIRE(uevr::API::VR::is_using_contriollers() == true);
+
+    uevr::ScriptState::GarbageCollectionData gc{};
+    uevr::ScriptState state{gc, &host.param, true};
+    auto& lua = state.lua();
+
+    auto* mc = uevr::API::UObjectHook::get_or_add_motion_controller_state(reinterpret_cast<uevr::API::UObject*>(0x1));
+    lua["test_mc"] = mc;
+
+    auto res = lua.safe_script("test_mc:set_rotation_offset(Vector4f.new(0.1, 0.2, 0.3, 0.9))");
+    REQUIRE(res.valid());
+    REQUIRE_NEAR(s_rot_offset.w, 0.9f, 1e-5f);
+    REQUIRE_NEAR(s_rot_offset.x, 0.1f, 1e-5f);
+    REQUIRE_NEAR(s_rot_offset.y, 0.2f, 1e-5f);
+    REQUIRE_NEAR(s_rot_offset.z, 0.3f, 1e-5f);
+
+    auto res_d = lua.safe_script("test_mc:set_rotation_offset(Vector4d.new(-0.1, 0.25, -0.35, 0.85))");
+    REQUIRE(res_d.valid());
+    REQUIRE_NEAR(s_rot_offset.w, 0.85f, 1e-5f);
+    REQUIRE_NEAR(s_rot_offset.x, -0.1f, 1e-5f);
+    REQUIRE_NEAR(s_rot_offset.y, 0.25f, 1e-5f);
+    REQUIRE_NEAR(s_rot_offset.z, -0.35f, 1e-5f);
 }
 
 int main() {

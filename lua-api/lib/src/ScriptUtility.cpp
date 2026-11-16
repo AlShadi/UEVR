@@ -416,57 +416,48 @@ void set_property(sol::this_state s, void* self, uevr::API::UStruct* owner_c, ue
 
         auto& fstr = *(FString*)&*(uevr::API::TArray<wchar_t>*)((uintptr_t)self + offset);
 
-        if (arg_obj.is<std::wstring>()) {
-            const auto src = arg_obj.as<std::wstring>();
+        auto assign_fstring = [&](std::wstring_view src) {
+            const auto needed_count = static_cast<int32_t>(src.size() + 1);
 
             // Dynamic strings is used for temporary stuff like function calls
             // when we set a property it can exist permanently
             if (dynamic_strings != nullptr) {
-                auto buffer = std::make_unique<wchar_t[]>(src.size() + 1);
+                auto buffer = std::make_unique<wchar_t[]>(needed_count);
                 std::copy(src.begin(), src.end(), buffer.get());
                 buffer[src.size()] = L'\0';
-    
-                fstr.count = src.size() + 1;
-                fstr.capacity = fstr.count;
+
+                fstr.count = needed_count;
+                fstr.capacity = needed_count;
                 fstr.data = buffer.get();
 
                 dynamic_strings->push_back(std::move(buffer));
-            } else {
-                // Use FMalloc (TODO)
+            } else if (auto* fmalloc = uevr::API::FMalloc::get(); fmalloc != nullptr) {
+                if (fstr.data != nullptr) {
+                    if (needed_count > fstr.capacity) {
+                        fstr.data = (wchar_t*)fmalloc->realloc(fstr.data, needed_count * sizeof(wchar_t), alignof(wchar_t));
+                        fstr.capacity = needed_count;
+                    }
+                } else {
+                    fstr.data = (wchar_t*)fmalloc->malloc(needed_count * sizeof(wchar_t), alignof(wchar_t));
+                    fstr.capacity = needed_count;
+                }
 
+                if (fstr.data != nullptr) {
+                    std::copy(src.begin(), src.end(), fstr.data);
+                    fstr.data[src.size()] = L'\0';
+                    fstr.count = needed_count;
+                }
             }
+        };
+
+        if (arg_obj.is<std::wstring>()) {
+            assign_fstring(arg_obj.as<std::wstring>());
         } else if (arg_obj.is<std::string>()) {
             const auto src = ::utility::widen(arg_obj.as<std::string>());
-
-            if (dynamic_strings != nullptr) {
-                auto buffer = std::make_unique<wchar_t[]>(src.size() + 1);
-                std::copy(src.begin(), src.end(), buffer.get());
-                buffer[src.size()] = L'\0';
-
-                fstr.count = src.size() + 1;
-                fstr.capacity = fstr.count;
-                fstr.data = buffer.get();
-
-                dynamic_strings->push_back(std::move(buffer));
-            } else {
-                // Use FMalloc (TODO)
-            }
+            assign_fstring(src);
         } else if (arg_obj.is<wchar_t*>()) {
-            const auto src = std::wstring_view{arg_obj.as<wchar_t*>()};
-
-            if (dynamic_strings != nullptr) {
-                auto buffer = std::make_unique<wchar_t[]>(src.size() + 1);
-                std::copy(src.begin(), src.end(), buffer.get());
-                buffer[src.size()] = L'\0';
-
-                fstr.count = src.size() + 1;
-                fstr.capacity = fstr.count;
-                fstr.data = buffer.get();
-
-                dynamic_strings->push_back(std::move(buffer));
-            } else {
-                // Use FMalloc (TODO)
-            }
+            const auto* ptr = arg_obj.as<wchar_t*>();
+            assign_fstring(ptr != nullptr ? std::wstring_view{ptr} : std::wstring_view{});
         } else {
             throw sol::error("Invalid argument type for FString");
         }
@@ -756,14 +747,24 @@ sol::object call_function(sol::this_state s, uevr::API::UObject* self, uevr::API
                         tbl[k] = v;
                     }
                     
-                    arr.~TArray(); // This should be safe, as this is not our array
+                    bool is_dynamic_array = false;
+                    for (const auto& dyn_arr : dynamic_object_arrays) {
+                        if (arr.data == dyn_arr.data()) {
+                            is_dynamic_array = true;
+                            break;
+                        }
+                    }
+
+                    if (!is_dynamic_array) {
+                        arr.~TArray(); // Only free via FMalloc when allocated by UE
+                    }
                 } else {
                     tbl["result"] = result;
                 }
             } else {
                 tbl["result"] = result;
             }
-        } else if (args[args_index].is<sol::nil_t>()) {
+        } else if (args[arg_index].is<sol::nil_t>()) {
             // Do nothing
         } else {
             throw sol::error(std::format("Invalid argument type for argument {} ({})", arg_index, ::utility::narrow(prop_c->get_fname()->to_string())));

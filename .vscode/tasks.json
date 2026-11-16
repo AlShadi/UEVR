@@ -42,7 +42,7 @@
                 "-ExecutionPolicy",
                 "Bypass",
                 "-Command",
-                "$ErrorActionPreference = 'Stop'; $cmake = (Get-Command cmake -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1); if (-not $cmake) { $cmake = 'C:\\Program Files\\CMake\\bin\\cmake.exe' }; if (-not (Test-Path $cmake)) { throw 'cmake.exe not found' }; & $cmake --build build --config Release --target uevr vr-plugin-nullifier LuaVR; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
+                "$ErrorActionPreference = 'Stop'; $cmake = (Get-Command cmake -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1); if (-not $cmake) { $cmake = 'C:\\Program Files\\CMake\\bin\\cmake.exe' }; if (-not (Test-Path $cmake)) { throw 'cmake.exe not found' }; & $cmake --build build --config Release --target uevr vr-plugin-nullifier LuaVR uevr-tests; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -50,6 +50,24 @@
             "group": {
                 "kind": "build",
                 "isDefault": false
+            },
+            "problemMatcher": [
+                "$msCompile"
+            ]
+        },
+        {
+            "label": "Run Tests",
+            "type": "process",
+            "command": "powershell",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                "$ErrorActionPreference = 'Stop'; $ctest = (Get-Command ctest -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1); if (-not $ctest) { $ctest = 'C:\\Program Files\\CMake\\bin\\ctest.exe' }; if (-not (Test-Path $ctest)) { throw 'ctest.exe not found' }; & $ctest --test-dir build -C Release --output-on-failure; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; dotnet run --project frontend/UEVR.Tests/UEVR.Tests.csproj --configuration Release; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
             },
             "problemMatcher": [
                 "$msCompile"

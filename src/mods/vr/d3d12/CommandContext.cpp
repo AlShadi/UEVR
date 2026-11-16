@@ -40,6 +40,10 @@ bool CommandContext::setup(const wchar_t* name) {
     }
 
     this->fence->SetName(name);
+    if (this->fence_event != nullptr) {
+        CloseHandle(this->fence_event);
+        this->fence_event = nullptr;
+    }
     this->fence_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 
     return true;
@@ -54,16 +58,20 @@ void CommandContext::reset() {
     this->cmd_list.Reset();
     this->fence.Reset();
     this->fence_value = 0;
-    CloseHandle(this->fence_event);
-    this->fence_event = 0;
+    if (this->fence_event != nullptr) {
+        CloseHandle(this->fence_event);
+        this->fence_event = nullptr;
+    }
     this->waiting_for_fence = false;
 }
 
 void CommandContext::wait(uint32_t ms) {
     std::scoped_lock _{this->mtx};
 
-	if (this->fence_event && this->waiting_for_fence) {
-        WaitForSingleObject(this->fence_event, ms);
+    if (this->fence_event && this->waiting_for_fence) {
+        if (WaitForSingleObject(this->fence_event, ms) != WAIT_OBJECT_0) {
+            return;
+        }
         ResetEvent(this->fence_event);
         this->waiting_for_fence = false;
         if (FAILED(this->cmd_allocator->Reset())) {
@@ -251,6 +259,8 @@ void CommandContext::copy_region_stereo(ID3D12Resource* srcleft, ID3D12Resource*
     D3D12_RESOURCE_STATES src_state,
     D3D12_RESOURCE_STATES dst_state)
 {
+    std::scoped_lock _{this->mtx};
+
     if (srcleft == nullptr || srcright == nullptr || dst == nullptr) {
         spdlog::error("[VR] nullptr passed to copy_region_stereo");
         return;

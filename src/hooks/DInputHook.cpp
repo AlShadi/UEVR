@@ -20,13 +20,13 @@ DInputHook::DInputHook() {
 
     SPDLOG_INFO("[DInputHook] Creating thread");
 
-    std::thread([this]() {
+    m_hook_thread = std::make_unique<std::jthread>([this](std::stop_token s) {
         SPDLOG_INFO("[DInputHook] Entering thread");
 
         const auto start_time = std::chrono::steady_clock::now();
         HMODULE dinput8{nullptr};
 
-        while (dinput8 == nullptr) {
+        while (dinput8 == nullptr && !s.stop_requested()) {
             dinput8 = GetModuleHandleA("dinput8.dll");
 
             if (dinput8) {
@@ -42,7 +42,13 @@ DInputHook::DInputHook() {
             }
 
             SPDLOG_INFO("[DInputHook] Waiting for dinput8.dll to load...");
-            Sleep(1000);
+            for (int i = 0; i < 20 && !s.stop_requested(); ++i) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+        }
+
+        if (s.stop_requested() || dinput8 == nullptr) {
+            return;
         }
 
         auto create_addr = GetProcAddress(dinput8, "DirectInput8Create");
@@ -54,6 +60,7 @@ DInputHook::DInputHook() {
 
         SPDLOG_INFO("[DInputHook] Found DirectInput8Create at {:x}", (uintptr_t)create_addr);
 
+        std::scoped_lock _{m_mutex};
         m_create_hook = safetyhook::create_inline(create_addr, (uintptr_t)create_hooked);
 
         if (!m_create_hook) {
@@ -62,7 +69,7 @@ DInputHook::DInputHook() {
         }
 
         SPDLOG_INFO("[DInputHook] Hooked DirectInput8Create");
-    }).detach();
+    });
 
     SPDLOG_INFO("[DInputHook] Exiting constructor");
 }

@@ -45,7 +45,7 @@ echo.
 echo %fxc%
 %fxc% || set error=1
 exit /b
-4
+
 :CompileShaderHLSL
 set fxc=%PCFXC% "%1.hlsl" %FXCOPTS% /T%2_5_0 /E%3 "/Fh%CompileShadersOutput%\%1_%3.inc" "/Fd%CompileShadersOutput%\%1_%3.pdb" /Vn%1_%3
 echo.

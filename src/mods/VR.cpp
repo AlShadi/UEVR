@@ -1104,42 +1104,45 @@ void VR::update_imgui_state_from_xinput_state(XINPUT_STATE& state, bool is_vr_co
     // It will either need to be adjusted by the HMD rotation or one of the controllers.
     if (is_using_this_controller && m_movement_orientation->value() != VR::AimMethod::GAME && m_movement_orientation->value() != m_aim_method->value()) {
         const auto left_stick_og = glm::vec2((float)state.Gamepad.sThumbLX, (float)state.Gamepad.sThumbLY );
-        const auto left_stick_magnitude = glm::clamp(glm::length(left_stick_og), -32767.0f, 32767.0f);
-        const auto left_stick = glm::normalize(left_stick_og);
-        const auto left_stick_angle = glm::atan2(left_stick.y, left_stick.x);
+        const auto raw_length = glm::length(left_stick_og);
+        if (raw_length > 0.0f) {
+            const auto left_stick_magnitude = glm::clamp(raw_length, -32767.0f, 32767.0f);
+            const auto left_stick = left_stick_og / raw_length;
+            const auto left_stick_angle = glm::atan2(left_stick.y, left_stick.x);
 
-        if (this->is_controller_movement_enabled() && is_vr_controller) {
-            const auto controller_index = this->get_movement_orientation() == VR::AimMethod::LEFT_CONTROLLER ? get_left_controller_index() : get_right_controller_index();
-            const auto controller_rotation = utility::math::flatten(m_rotation_offset * glm::quat{get_rotation(controller_index)});
-            const auto controller_forward = controller_rotation * glm::vec3(0.0f, 0.0f, 1.0f);
-            const auto controller_angle = glm::atan2(controller_forward.x, controller_forward.z);
+            if (this->is_controller_movement_enabled() && is_vr_controller) {
+                const auto controller_index = this->get_movement_orientation() == VR::AimMethod::LEFT_CONTROLLER ? get_left_controller_index() : get_right_controller_index();
+                const auto controller_rotation = utility::math::flatten(m_rotation_offset * glm::quat{get_rotation(controller_index)});
+                const auto controller_forward = controller_rotation * glm::vec3(0.0f, 0.0f, 1.0f);
+                const auto controller_angle = glm::atan2(controller_forward.x, controller_forward.z);
 
-            // Normalize angles to [0, 2π]
-            const auto normalized_left_stick_angle = left_stick_angle < 0 ? left_stick_angle + 2 * glm::pi<float>() : left_stick_angle;
-            const auto normalized_controller_angle = controller_angle < 0 ? controller_angle + 2 * glm::pi<float>() : controller_angle;
+                // Normalize angles to [0, 2π]
+                const auto normalized_left_stick_angle = left_stick_angle < 0 ? left_stick_angle + 2 * glm::pi<float>() : left_stick_angle;
+                const auto normalized_controller_angle = controller_angle < 0 ? controller_angle + 2 * glm::pi<float>() : controller_angle;
 
-            // Add the angles together
-            const auto new_left_stick_angle = utility::math::fix_angle(normalized_left_stick_angle + normalized_controller_angle);
-            const auto new_left_stick = glm::vec2(glm::cos(new_left_stick_angle), glm::sin(new_left_stick_angle)) * left_stick_magnitude;
+                // Add the angles together
+                const auto new_left_stick_angle = utility::math::fix_angle(normalized_left_stick_angle + normalized_controller_angle);
+                const auto new_left_stick = glm::vec2(glm::cos(new_left_stick_angle), glm::sin(new_left_stick_angle)) * left_stick_magnitude;
 
-            state.Gamepad.sThumbLX = (int16_t)new_left_stick.x;
-            state.Gamepad.sThumbLY = (int16_t)new_left_stick.y;
-        } else { // Fallback to head aim
-            // Rotate the left stick by the HMD rotation
-            const auto hmd_rotation = utility::math::flatten(m_rotation_offset * glm::quat{get_rotation(0)});
-            const auto hmd_forward = hmd_rotation * glm::vec3(0.0f, 0.0f, 1.0f);
-            const auto hmd_angle = glm::atan2(hmd_forward.x, hmd_forward.z);
+                state.Gamepad.sThumbLX = (int16_t)new_left_stick.x;
+                state.Gamepad.sThumbLY = (int16_t)new_left_stick.y;
+            } else { // Fallback to head aim
+                // Rotate the left stick by the HMD rotation
+                const auto hmd_rotation = utility::math::flatten(m_rotation_offset * glm::quat{get_rotation(0)});
+                const auto hmd_forward = hmd_rotation * glm::vec3(0.0f, 0.0f, 1.0f);
+                const auto hmd_angle = glm::atan2(hmd_forward.x, hmd_forward.z);
 
-            // Normalize angles to [0, 2π]
-            const auto normalized_left_stick_angle = left_stick_angle < 0 ? left_stick_angle + 2 * glm::pi<float>() : left_stick_angle;
-            const auto normalized_hmd_angle = hmd_angle < 0 ? hmd_angle + 2 * glm::pi<float>() : hmd_angle;
+                // Normalize angles to [0, 2π]
+                const auto normalized_left_stick_angle = left_stick_angle < 0 ? left_stick_angle + 2 * glm::pi<float>() : left_stick_angle;
+                const auto normalized_hmd_angle = hmd_angle < 0 ? hmd_angle + 2 * glm::pi<float>() : hmd_angle;
 
-            // Add the angles together
-            const auto new_left_stick_angle = utility::math::fix_angle(normalized_left_stick_angle + normalized_hmd_angle);
-            const auto new_left_stick = glm::vec2{glm::cos(new_left_stick_angle), glm::sin(new_left_stick_angle)} * left_stick_magnitude;
+                // Add the angles together
+                const auto new_left_stick_angle = utility::math::fix_angle(normalized_left_stick_angle + normalized_hmd_angle);
+                const auto new_left_stick = glm::vec2{glm::cos(new_left_stick_angle), glm::sin(new_left_stick_angle)} * left_stick_magnitude;
 
-            state.Gamepad.sThumbLX = (int16_t)new_left_stick.x;
-            state.Gamepad.sThumbLY = (int16_t)new_left_stick.y;
+                state.Gamepad.sThumbLX = (int16_t)new_left_stick.x;
+                state.Gamepad.sThumbLY = (int16_t)new_left_stick.y;
+            }
         }
     }
 
@@ -2406,8 +2409,6 @@ void VR::on_draw_sidebar_entry(std::string_view name) {
         get_runtime()->on_draw_ui();
 
         m_overlay_component.on_draw_ui();
-
-        ImGui::TreePop();
     }
 
     if (selected_page == PAGE_UNREAL) {
@@ -2683,7 +2684,7 @@ void VR::on_draw_sidebar_entry(std::string_view name) {
         ImGui::TextWrapped("Hardware scheduling: %s", m_has_hw_scheduling ? "Enabled" : "Disabled");
     }
 
-    ImGui::EndGroup();
+    //ImGui::EndGroup();
     //ImGui::EndTable();
 }
 
@@ -2954,6 +2955,8 @@ Matrix4x4f VR::get_transform(uint32_t index, bool grip) const {
         const auto matrix = Matrix4x4f{ *(Matrix3x4f*)&pose.mDeviceToAbsoluteTracking };
         return glm::rowMajor4(matrix);
     } else if (get_runtime()->is_openxr()) {
+        std::shared_lock _{ get_runtime()->pose_mtx };
+
         // HMD rotation
         if (index == 0 && !m_openxr->stage_views.empty()) {
             const auto vspl = m_openxr->get_current_view_space_location();
@@ -3035,7 +3038,7 @@ Vector4f VR::get_current_offset() {
 Matrix4x4f VR::get_eye_transform(uint32_t index) {
     ZoneScopedN(__FUNCTION__);
 
-    if (!is_hmd_active() || index > 2) {
+    if (!is_hmd_active() || index >= 2) {
         return glm::identity<Matrix4x4f>();
     }
 

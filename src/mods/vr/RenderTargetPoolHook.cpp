@@ -121,7 +121,7 @@ bool RenderTargetPoolHook::find_free_element_hook_ue5(
 {
     SPDLOG_INFO_ONCE("FRenderTargetPool::FindFreeElement (UE5) called for the first time!");
 
-    const auto result = g_hook->m_find_free_element_hook.call<bool>(pool, desc, out, name, a6, a7, a8, a9, a10);
+    const auto result = g_hook->m_find_free_element_hook.call<bool>(pool, desc, out, name, a5, a6, a7, a8, a9, a10);
 
     SPDLOG_INFO_ONCE("Finished calling FRenderTargetPool::FindFreeElement! (UE5)");
 

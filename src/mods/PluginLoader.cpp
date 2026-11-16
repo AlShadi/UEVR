@@ -1881,7 +1881,7 @@ void PluginLoader::attempt_unload_plugins() {
     using UEVR_PluginShutdownFn = void (*)();
 
     {
-        std::unique_lock _{m_api_cb_mtx};
+        std::scoped_lock mux_lock{m_mux};
 
         for (auto& [name, module] : m_plugins) {
             if (module == nullptr) {
@@ -1900,12 +1900,15 @@ void PluginLoader::attempt_unload_plugins() {
             }
         }
 
-        for_each_callback_list([](auto& callbacks) {
-            callbacks.clear();
-        });
+        {
+            std::unique_lock cb_lock{m_api_cb_mtx};
+            for_each_callback_list([](auto& callbacks) {
+                callbacks.clear();
+            });
+        }
 
         {
-            std::unique_lock _{m_ufunction_hooks_mtx};
+            std::unique_lock ufunc_lock{m_ufunction_hooks_mtx};
 
             for (auto& [ufunction, hook] : m_ufunction_hooks) {
                 hook->remove_callbacks();
@@ -1913,7 +1916,9 @@ void PluginLoader::attempt_unload_plugins() {
         }
 
         for (auto& pair : m_plugins) {
-            FreeLibrary(pair.second);
+            if (pair.second != nullptr) {
+                FreeLibrary(pair.second);
+            }
         }
 
         m_inline_hooks.clear();

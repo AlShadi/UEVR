@@ -1189,9 +1189,6 @@ bool Framework::initialize() {
             return false;
         }
 
-        ID3D11DeviceContext* context = nullptr;
-        device->GetImmediateContext(&context);
-
         DXGI_SWAP_CHAIN_DESC swap_desc{};
         swap_chain->GetDesc(&swap_desc);
 

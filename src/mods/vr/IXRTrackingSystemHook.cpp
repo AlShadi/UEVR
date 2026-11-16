@@ -53,7 +53,10 @@ uevr::UEVersion resolve_engine_version(std::optional<std::string> version_overri
 
 #define UEVR_DISPATCH_UE_4_18_PLUS_VT(ver, vt_type) \
     switch (ver) { \
-    case uevr::UEVersion::UE5_4: return ue5_3::vt_type::get(); \
+    case uevr::UEVersion::UE5_7: \
+    case uevr::UEVersion::UE5_6: \
+    case uevr::UEVersion::UE5_5: \
+    case uevr::UEVersion::UE5_4: \
     case uevr::UEVersion::UE5_3: return ue5_3::vt_type::get(); \
     case uevr::UEVersion::UE5_2: return ue5_1::vt_type::get(); \
     case uevr::UEVersion::UE5_1: return ue5_1::vt_type::get(); \
@@ -379,7 +382,7 @@ void IXRTrackingSystemHook::initialize() {
             }
 
             if (hmdvt.ResetOrientation_index().has_value()) {
-                m_hmd_vtable[hmdvt.ResetPosition_index().value()] = (uintptr_t)&reset_orientation;
+                m_hmd_vtable[hmdvt.ResetOrientation_index().value()] = (uintptr_t)&reset_orientation;
             } else {
                 SPDLOG_ERROR("IXRTrackingSystemHook::IXRTrackingSystemHook: reset_orientation_index not implemented");
             }

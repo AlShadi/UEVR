@@ -28,7 +28,7 @@ class VR;
 
 class UEVRSharedMemory {
 public:
-    static inline int MESSAGE_IDENTIFIER = *(int*)"VRMOD";
+    static inline constexpr int MESSAGE_IDENTIFIER = 0x4F4D5256; // "VRMO" (little-endian)
 
     enum Command {
         RELOAD_CONFIG = 0,
@@ -40,20 +40,25 @@ public:
     UEVRSharedMemory();
 
     virtual ~UEVRSharedMemory() {
-        UnmapViewOfFile(m_data);
-        CloseHandle(m_memory);
+        if (m_data != nullptr && m_data != &m_fallback_data) {
+            UnmapViewOfFile(m_data);
+        }
+        if (m_memory != nullptr && m_memory != INVALID_HANDLE_VALUE) {
+            CloseHandle(m_memory);
+        }
     }
 
     using Data = UEVRSharedMemoryData;
     static_assert(sizeof(Data::path) == MAX_PATH * sizeof(wchar_t), "Shared memory path buffer must match MAX_PATH");
 
     Data& data() {
-        return *m_data;
+        return m_data != nullptr ? *m_data : m_fallback_data;
     }
 
 private:
     HANDLE m_memory{};
     Data* m_data{};
+    Data m_fallback_data{};
 };
 
 struct SidebarEntryInfo {

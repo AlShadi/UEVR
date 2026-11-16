@@ -362,6 +362,7 @@ void* UObjectHook::process_event_hook(sdk::UObject* obj, sdk::UFunction* func, v
                     } else {
                         arr.count = 0;  
                     }
+                    break;
                 }
                 case L"StrProperty"_fnv:
                 {
@@ -2491,30 +2492,39 @@ void UObjectHook::draw_main() {
         const bool filter_empty = std::string_view{filter}.empty();
 
         const auto now = std::chrono::steady_clock::now();
-        bool needs_sort = true;
+        bool needs_sort = (now - m_last_sort_time) > std::chrono::seconds(1);
 
         if (m_sorting_task.valid()) {
             // Check if the sorting task is finished
             if (m_sorting_task.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
                 // Do something if needed when sorting is done
                 m_sorted_classes = m_sorting_task.get();
-                needs_sort = true;
             } else {
                 needs_sort = false;
             }
-        } else {
-            needs_sort = true;
         }
 
         if (needs_sort) {
             auto sort_classes = [this](std::vector<sdk::UClass*> classes) {
-                std::sort(classes.begin(), classes.end(), [this](sdk::UClass* a, sdk::UClass* b) {
+                std::unordered_map<sdk::UClass*, std::wstring> class_names{};
+                {
                     std::shared_lock _{m_mutex};
-                    if (!m_objects.contains(a) || !m_objects.contains(b)) {
-                        return false;
+                    class_names.reserve(classes.size());
+                    for (auto* cls : classes) {
+                        if (m_objects.contains(cls)) {
+                            if (auto it = m_meta_objects.find(cls); it != m_meta_objects.end() && it->second != nullptr) {
+                                class_names.emplace(cls, it->second->full_name);
+                            }
+                        }
                     }
+                }
 
-                    return m_meta_objects[a]->full_name < m_meta_objects[b]->full_name;
+                std::erase_if(classes, [&class_names](sdk::UClass* cls) {
+                    return !class_names.contains(cls);
+                });
+
+                std::sort(classes.begin(), classes.end(), [&class_names](sdk::UClass* a, sdk::UClass* b) {
+                    return class_names[a] < class_names[b];
                 });
 
                 return classes;

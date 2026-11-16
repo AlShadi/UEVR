@@ -12,27 +12,42 @@ WindowFilter& WindowFilter::get() {
 }
 
 WindowFilter::WindowFilter() {
+    m_last_job_tick = std::chrono::steady_clock::now();
+
     // We create a job thread because GetWindowTextA can actually deadlock inside
     // the present thread...
     m_job_thread = std::make_unique<std::jthread>([this](std::stop_token s){
         while (!s.stop_requested()) {
             std::this_thread::sleep_for(std::chrono::milliseconds{100});
 
-            m_last_job_tick = std::chrono::steady_clock::now();
+            std::vector<HWND> jobs{};
+            {
+                std::scoped_lock _{m_mutex};
+                m_last_job_tick = std::chrono::steady_clock::now();
 
-            if (m_window_jobs.empty()) {
-                return;
+                if (m_window_jobs.empty()) {
+                    continue;
+                }
+
+                jobs.assign(m_window_jobs.begin(), m_window_jobs.end());
             }
 
-            std::scoped_lock _{m_mutex};
-
-            for (const auto hwnd : m_window_jobs) {
+            std::vector<HWND> filtered{};
+            for (const auto hwnd : jobs) {
                 if (is_filtered_nocache(hwnd)) {
-                    filter_window(hwnd);
+                    filtered.push_back(hwnd);
                 }
             }
 
-            m_window_jobs.clear();
+            {
+                std::scoped_lock _{m_mutex};
+                for (const auto hwnd : filtered) {
+                    m_filtered_windows.insert(hwnd);
+                }
+                for (const auto hwnd : jobs) {
+                    m_window_jobs.erase(hwnd);
+                }
+            }
         }
     });
 }
@@ -71,9 +86,19 @@ bool WindowFilter::is_filtered(HWND hwnd) {
 }
 
 bool WindowFilter::is_filtered_nocache(HWND hwnd) {
-    // get window name
+    // Use SendMessageTimeoutA so an unresponsive window thread can never hang the job thread
     char window_name[256]{};
-    GetWindowTextA(hwnd, window_name, sizeof(window_name));
+    DWORD_PTR result = 0;
+    if (SendMessageTimeoutA(
+            hwnd,
+            WM_GETTEXT,
+            sizeof(window_name),
+            reinterpret_cast<LPARAM>(window_name),
+            SMTO_ABORTIFHUNG,
+            50,
+            &result) == 0) {
+        return false;
+    }
 
     const auto sv = std::string_view{window_name};
 

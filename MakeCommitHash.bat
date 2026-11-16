@@ -8,13 +8,10 @@ set UEVR_TAG=no_tag
 FOR /F "tokens=*" %%t IN ('git describe --tags --abbrev^=0 2^>nul') DO (SET UEVR_TAG=%%t)
 IF "%UEVR_TAG%"=="" (SET UEVR_TAG=no_tag)
 
-set UEVR_TAG_LONG=
+set UEVR_TAG_LONG=%UEVR_TAG%
 set UEVR_COMMITS_PAST_TAG=0
-FOR /F "tokens=*" %%c IN ('git describe --tags --long 2^>nul') DO (
-FOR /F "tokens=1,2 delims=-" %%a IN ("%%c") DO (
-SET UEVR_TAG_LONG=%%a
-SET UEVR_COMMITS_PAST_TAG=%%b
-)
+IF NOT "%UEVR_TAG%"=="no_tag" (
+    FOR /F "tokens=*" %%n IN ('git rev-list "%UEVR_TAG%..HEAD" --count 2^>nul') DO (SET UEVR_COMMITS_PAST_TAG=%%n)
 )
 IF "%UEVR_COMMITS_PAST_TAG%"=="" (SET UEVR_COMMITS_PAST_TAG=0)
 

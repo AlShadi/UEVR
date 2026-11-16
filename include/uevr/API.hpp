@@ -1376,14 +1376,18 @@ public:
             return result;
         }
 
-        static void trigger_haptic_vibration(float seconds_from_now, float amplitude, float frequency, float duration, UEVR_InputSourceHandle source) {
+        static void trigger_haptic_vibration(float seconds_from_now, float duration, float frequency, float amplitude, UEVR_InputSourceHandle source) {
             static const auto fn = initialize()->trigger_haptic_vibration;
-            fn(seconds_from_now, amplitude, frequency, duration, source);
+            fn(seconds_from_now, duration, frequency, amplitude, source);
+        }
+
+        static bool is_using_controllers() {
+            static const auto fn = initialize()->is_using_controllers;
+            return fn();
         }
 
         static bool is_using_contriollers() {
-            static const auto fn = initialize()->is_using_controllers;
-            return fn();
+            return is_using_controllers();
         }
 
         static bool is_decoupled_pitch_enabled() {

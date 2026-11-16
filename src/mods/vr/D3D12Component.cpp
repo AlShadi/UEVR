@@ -1012,7 +1012,10 @@ void D3D12Component::clear_backbuffer() {
     }
 
     // Clear the backbuffer
-    backbuffer_ctx.commands.wait(0);
+    backbuffer_ctx.commands.wait(100);
+    if (backbuffer_ctx.commands.waiting_for_fence) {
+        return;
+    }
     const float clear_color[] = { 0.0f, 0.0f, 0.0f, 0.0f };
     backbuffer_ctx.commands.clear_rtv(backbuffer_ctx.texture.Get(), backbuffer_ctx.get_rtv(), clear_color, D3D12_RESOURCE_STATE_PRESENT);
     backbuffer_ctx.commands.execute();

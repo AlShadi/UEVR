@@ -565,7 +565,7 @@ sdkgenny::Variable* SDKDumper::generate_property(sdkgenny::Struct* s, sdk::FProp
 
         getter->returns(g->type("bool"));
         getter->procedure(
-            std::format("return (*(uint8_t*)((uintptr_t)this + 0x{:x} + {})) & {} != 0;", fprop->get_offset(), byte_offset, byte_mask)
+            std::format("return ((*(uint8_t*)((uintptr_t)this + 0x{:x} + {})) & {}) != 0;", fprop->get_offset(), byte_offset, byte_mask)
         );
 
         auto setter = s->function("set_" + prop_name);

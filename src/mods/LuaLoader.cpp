@@ -328,9 +328,9 @@ void LuaLoader::state_post_init(std::shared_ptr<ScriptState>& state) {
     auto lua_table = lua.create_table();
 
     // TODO: Rework this to be within add_additional_bindings somehow without a weak_ptr
-    lua_table["add_script_panel"] = [this, &state](sol::this_state s, std::string name, sol::function fn) {
+    lua_table["add_script_panel"] = [this, weak_state = std::weak_ptr<ScriptState>{state}](sol::this_state s, std::string name, sol::function fn) {
         m_script_panels.emplace_back(PanelEntry{
-            .state = std::weak_ptr<ScriptState>{state},
+            .state = weak_state,
             .name = name,
             .fn = fn
         });

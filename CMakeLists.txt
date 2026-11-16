@@ -29,6 +29,7 @@ endif()
 
  
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/MP>)
 
 # Enable PDB generation in release mode, but without the extra crap that RelWithDebInfo adds
@@ -43,21 +44,6 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MP")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP")
 
 set(ASMJIT_STATIC ON CACHE BOOL "" FORCE)
-
-if ("${CMAKE_BUILD_TYPE}" MATCHES "Release")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MT")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MT")
-
-    # Statically compile runtime
-    string(REGEX REPLACE "/MD" "/MT" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-    string(REGEX REPLACE "/MD" "/MT" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
-    string(REGEX REPLACE "/MD" "/MT" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
-    string(REGEX REPLACE "/MD" "/MT" CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
-
-    message(NOTICE "Building in Release mode")
-endif()
-
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 add_subdirectory(dependencies/submodules/UESDK)
 
@@ -249,13 +235,6 @@ set(openvr_SOURCES "")
 list(APPEND openvr_SOURCES
 	"dependencies/openvr/src/jsoncpp.cpp"
 	"dependencies/openvr/src/openvr_api_public.cpp"
-	"dependencies/openvr/src/vrcommon/dirtools_public.cpp"
-	"dependencies/openvr/src/vrcommon/envvartools_public.cpp"
-	"dependencies/openvr/src/vrcommon/hmderrors_public.cpp"
-	"dependencies/openvr/src/vrcommon/pathtools_public.cpp"
-	"dependencies/openvr/src/vrcommon/sharedlibtools_public.cpp"
-	"dependencies/openvr/src/vrcommon/strtools_public.cpp"
-	"dependencies/openvr/src/vrcommon/vrpathregistry_public.cpp"
 	"dependencies/openvr/src/vrcommon/dirtools_public.cpp"
 	"dependencies/openvr/src/vrcommon/envvartools_public.cpp"
 	"dependencies/openvr/src/vrcommon/hmderrors_public.cpp"
@@ -917,6 +896,7 @@ set(uevr-tests_SOURCES "")
 
 list(APPEND uevr-tests_SOURCES
 	"tests/main.cpp"
+	"src/WindowFilter.cpp"
 )
 
 list(APPEND uevr-tests_SOURCES

@@ -195,12 +195,13 @@ sol::object call_member_virtual(sol::this_state s, uevr::API::UObject* self, siz
         throw sol::error("DANGEROUS_call_member_virtual: Too many arguments");
     }
 
-    enum TypeBits {
-        PRIMITIVE_INTEGER = 1 << 0,
-        PRIMITIVE_FLOAT = 1 << 1,
+    enum TypeBits : size_t {
+        PRIMITIVE_INTEGER = 1ULL << 0,
+        PRIMITIVE_FLOAT = 1ULL << 1,
     };
 
     using Stub = void* (*)(void* self, void* target_fn, void* args_ptr);
+    static std::mutex stubs_mtx{};
     static asmjit::JitRuntime rt;
     static std::unordered_map<size_t, Stub> stubs{};
 
@@ -219,7 +220,7 @@ sol::object call_member_virtual(sol::this_state s, uevr::API::UObject* self, siz
             type_bits |= PRIMITIVE_INTEGER << (2 * i);
         } else if (args[i].is<lua::datatypes::StructObject*>()) {
             args_converted[i] = (size_t)args[i].as<lua::datatypes::StructObject*>()->object;
-            type_bits |= PRIMITIVE_INTEGER << (2 * i);;
+            type_bits |= PRIMITIVE_INTEGER << (2 * i);
         } else if (args[i].is<float>()) {
             float f = args[i].as<float>();
             args_converted[i] = (size_t)*(uint32_t*)&f;
@@ -234,77 +235,81 @@ sol::object call_member_virtual(sol::this_state s, uevr::API::UObject* self, siz
         }
     }
 
-    if (auto it = stubs.find(type_bits); it != stubs.end()) {
-        // We already have a stub for this type
-        return sol::make_object(s, it->second(self, (*(void***)self)[index], args_converted.data()));
-    }
+    Stub stub = nullptr;
+    {
+        std::scoped_lock _{stubs_mtx};
+        if (auto it = stubs.find(type_bits); it != stubs.end()) {
+            stub = it->second;
+        } else {
+            asmjit::CodeHolder code{};
+            code.init(rt.environment());
 
-    asmjit::CodeHolder code{};
-    code.init(rt.environment());
+            asmjit::x86::Assembler a{&code};
+            static constexpr std::array<asmjit::x86::Gpq, 3> gpr_map{asmjit::x86::rdx, asmjit::x86::r8, asmjit::x86::r9};
+            static constexpr std::array<asmjit::x86::Xmm, 3> xmm_map{asmjit::x86::xmm1, asmjit::x86::xmm2, asmjit::x86::xmm3};
+            constexpr size_t SCRATCH_SPACE_SIZE = sizeof(void*) * 2;
+            constexpr size_t SHADOW_SPACE_SIZE = 32;
 
-    asmjit::x86::Assembler a{&code};
-    static constexpr std::array<asmjit::x86::Gpq, 3> gpr_map{asmjit::x86::rdx, asmjit::x86::r8, asmjit::x86::r9};
-    static constexpr std::array<asmjit::x86::Xmm, 3> xmm_map{asmjit::x86::xmm1, asmjit::x86::xmm2, asmjit::x86::xmm3};
-    constexpr size_t SCRATCH_SPACE_SIZE = sizeof(void*) * 2;
-    constexpr size_t SHADOW_SPACE_SIZE = 32;
+            size_t stack_correction_total = SHADOW_SPACE_SIZE;
+            const auto num_stack_args = args.size() > 3 ? args.size() - 3 : 0;
+            const auto stack_arg_size = num_stack_args * sizeof(void*);
 
-    size_t stack_correction_total = SHADOW_SPACE_SIZE;
-    const auto num_stack_args = args.size() > 3 ? args.size() - 3 : 0;
-    const auto stack_arg_size = num_stack_args * sizeof(void*);
+            // Allocate space for the stacks
+            stack_correction_total += stack_arg_size + SCRATCH_SPACE_SIZE;
+            stack_correction_total = ((stack_correction_total + 15) & ~15) + 8;
 
-    // Allocate space for the stacks
-    stack_correction_total += stack_arg_size + SCRATCH_SPACE_SIZE;
-    stack_correction_total = ((stack_correction_total + 15) & ~15) + 8;
+            // r9 will be our temp register that points to the args
+            a.mov(asmjit::x86::r9, asmjit::x86::r8);
 
-    // r9 will be our temp register that points to the args
-    a.mov(asmjit::x86::r9, asmjit::x86::r8);
+            // Store the rest of the args on the stack
+            a.sub(asmjit::x86::rsp, stack_correction_total);
 
-    // Store the rest of the args on the stack
-    a.sub(asmjit::x86::rsp, stack_correction_total);
+            // Our custom saved registers (scratch space)
+            a.mov(asmjit::x86::qword_ptr(asmjit::x86::rsp, stack_arg_size), asmjit::x86::rcx);
+            a.mov(asmjit::x86::qword_ptr(asmjit::x86::rsp, stack_arg_size + sizeof(void*)), asmjit::x86::rdx);
 
-    // Our custom saved registers (scratch space)
-    a.mov(asmjit::x86::qword_ptr(asmjit::x86::rsp, stack_arg_size), asmjit::x86::rcx);
-    a.mov(asmjit::x86::qword_ptr(asmjit::x86::rsp, stack_arg_size + sizeof(void*)), asmjit::x86::rdx);
-
-    // Start with stack args first
-    for (size_t i = 3; i < args.size(); ++i) {
-        a.mov(asmjit::x86::rcx, asmjit::x86::qword_ptr(asmjit::x86::r9, i * sizeof(void*)));
-        a.mov(asmjit::x86::qword_ptr(asmjit::x86::rsp, ((i - 3) * sizeof(void*))), asmjit::x86::rcx);
-    }
-
-    // Then GPRs
-    // We always start after RCX because RCX is always a this pointer.
-    for (size_t i = 0; i < 3; ++i) {
-        const auto type = (TypeBits)((type_bits >> (2 * i)) & 0b11);
-
-        if (type == PRIMITIVE_INTEGER) {
-            if (i < args.size()) {
-                a.mov(gpr_map[i], asmjit::x86::qword_ptr(asmjit::x86::r9, i * sizeof(void*)));
-            } else {
-                a.xor_(gpr_map[i], gpr_map[i]);
+            // Start with stack args first
+            for (size_t i = 3; i < args.size(); ++i) {
+                a.mov(asmjit::x86::rcx, asmjit::x86::qword_ptr(asmjit::x86::r9, i * sizeof(void*)));
+                a.mov(asmjit::x86::qword_ptr(asmjit::x86::rsp, ((i - 3) * sizeof(void*))), asmjit::x86::rcx);
             }
-        } else if (type == PRIMITIVE_FLOAT) {
-            // TODO: DOUBLE?
-            if (i < args.size()) {
-                a.movss(xmm_map[i], asmjit::x86::dword_ptr(asmjit::x86::r9, i * sizeof(void*)));
+
+            // Then GPRs
+            // We always start after RCX because RCX is always a this pointer.
+            for (size_t i = 0; i < 3; ++i) {
+                const auto type = (TypeBits)((type_bits >> (2 * i)) & 0b11);
+
+                if (type == PRIMITIVE_INTEGER) {
+                    if (i < args.size()) {
+                        a.mov(gpr_map[i], asmjit::x86::qword_ptr(asmjit::x86::r9, i * sizeof(void*)));
+                    } else {
+                        a.xor_(gpr_map[i], gpr_map[i]);
+                    }
+                } else if (type == PRIMITIVE_FLOAT) {
+                    // TODO: DOUBLE?
+                    if (i < args.size()) {
+                        a.movss(xmm_map[i], asmjit::x86::dword_ptr(asmjit::x86::r9, i * sizeof(void*)));
+                    }
+                }
             }
+
+            // Call the function
+            a.mov(asmjit::x86::rcx, asmjit::x86::qword_ptr(asmjit::x86::rsp, stack_arg_size));
+            a.call(asmjit::x86::qword_ptr(asmjit::x86::rsp, stack_arg_size + sizeof(void*)));
+
+            a.add(asmjit::x86::rsp, stack_correction_total);
+            a.ret();
+
+            uintptr_t code_addr{};
+            rt.add(&code_addr, &code);
+
+            OutputDebugStringA(std::format("Generated stub at {:x}", code_addr).c_str());
+
+            stub = (Stub)code_addr;
+            stubs[type_bits] = stub;
         }
     }
 
-    // Call the function
-    a.mov(asmjit::x86::rcx, asmjit::x86::qword_ptr(asmjit::x86::rsp, stack_arg_size));
-    a.call(asmjit::x86::qword_ptr(asmjit::x86::rsp, stack_arg_size + sizeof(void*)));
-
-    a.add(asmjit::x86::rsp, stack_correction_total);
-    a.ret();
-
-    uintptr_t code_addr{};
-    rt.add(&code_addr, &code);
-
-    OutputDebugStringA(std::format("Generated stub at {:x}", code_addr).c_str());
-
-    auto stub = (Stub)code_addr;
-    stubs[type_bits] = stub;
     auto result = stub(self, (*(void***)self)[index], args_converted.data());
 
     return sol::make_object(s, result); // TODO: convert?
@@ -939,27 +944,34 @@ int ScriptContext::setup_bindings() {
             if (obj.is<UEVR_Quaternionf>()) {
                 const auto q = obj.as<UEVR_Quaternionf>();
                 state->set_rotation_offset(&q);
+            } else if (obj.is<lua::datatypes::Quaternionf>()) {
+                const auto q = obj.as<lua::datatypes::Quaternionf>();
+                const UEVR_Quaternionf vq{ q.w, q.x, q.y, q.z };
+                state->set_rotation_offset(&vq);
+            } else if (obj.is<lua::datatypes::Quaterniond>()) {
+                const auto q = obj.as<lua::datatypes::Quaterniond>();
+                const UEVR_Quaternionf vq{ (float)q.w, (float)q.x, (float)q.y, (float)q.z };
+                state->set_rotation_offset(&vq);
             } else if (obj.is<lua::datatypes::Vector4f>()) {
                 const auto v = obj.as<lua::datatypes::Vector4f>();
-                const auto vq = (UEVR_Quaternionf*)&v;
-                state->set_rotation_offset(vq);
+                const UEVR_Quaternionf vq{ v.w, v.x, v.y, v.z };
+                state->set_rotation_offset(&vq);
             } else if (obj.is<lua::datatypes::Vector4d>()) {
                 const auto v = obj.as<lua::datatypes::Vector4d>();
-                const auto v_as_f = lua::datatypes::Vector3f{ (float)v.x, (float)v.y, (float)v.z };
-                const auto vq = (UEVR_Quaternionf*)&v_as_f;
-                state->set_rotation_offset(vq);
+                const UEVR_Quaternionf vq{ (float)v.w, (float)v.x, (float)v.y, (float)v.z };
+                state->set_rotation_offset(&vq);
             } else if (obj.is<lua::datatypes::Vector3f>()) { // Assume euler
                 const auto euler = obj.as<lua::datatypes::Vector3f>();
-                auto result = glm::quat{glm::yawPitchRoll(-euler.y, euler.x, -euler.z)};
-                const auto vq = (UEVR_Quaternionf*)&result;
+                const auto result = glm::quat{glm::yawPitchRoll(-euler.y, euler.x, -euler.z)};
+                const UEVR_Quaternionf vq{ result.w, result.x, result.y, result.z };
 
-                state->set_rotation_offset(vq);
+                state->set_rotation_offset(&vq);
             } else if (obj.is<lua::datatypes::Vector3d>()) { // Assume euler
                 const auto euler = obj.as<lua::datatypes::Vector3d>();
-                auto result = glm::quat{glm::yawPitchRoll((float)-euler.y, (float)euler.x, (float)-euler.z)};
-                const auto vq = (UEVR_Quaternionf*)&result;
+                const auto result = glm::quat{glm::yawPitchRoll((float)-euler.y, (float)euler.x, (float)-euler.z)};
+                const UEVR_Quaternionf vq{ result.w, result.x, result.y, result.z };
 
-                state->set_rotation_offset(vq);
+                state->set_rotation_offset(&vq);
             } else {
                 throw sol::error("Invalid type for set_rotation_offset");
             }

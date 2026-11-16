@@ -475,12 +475,15 @@ VRRuntime::Error OpenXR::update_matrices(float nearz, float farz) {
 
     // always update the pose:
     std::unique_lock ___{ this->pose_mtx };
-    const auto& left_pose = this->views[0].pose;
-    const auto& right_pose = this->views[1].pose;
-    this->eyes[0] = Matrix4x4f{OpenXR::to_glm(left_pose.orientation)};
-    this->eyes[0][3] = Vector4f{*(Vector3f*)&left_pose.position, 1.0f};
-    this->eyes[1] = Matrix4x4f{OpenXR::to_glm(right_pose.orientation)};
-    this->eyes[1][3] = Vector4f{*(Vector3f*)&right_pose.position, 1.0f};
+    {
+        std::unique_lock ____{ this->eyes_mtx };
+        const auto& left_pose = this->views[0].pose;
+        const auto& right_pose = this->views[1].pose;
+        this->eyes[0] = Matrix4x4f{OpenXR::to_glm(left_pose.orientation)};
+        this->eyes[0][3] = Vector4f{*(Vector3f*)&left_pose.position, 1.0f};
+        this->eyes[1] = Matrix4x4f{OpenXR::to_glm(right_pose.orientation)};
+        this->eyes[1][3] = Vector4f{*(Vector3f*)&right_pose.position, 1.0f};
+    }
 
     auto get_mat = [&](int eye) {
         const auto& vr = VR::get();
@@ -1554,6 +1557,12 @@ void OpenXR::display_bindings_editor() {
                     hand.profiles[current_interaction_profile].action_vector_associations[new_activator] = modifier;
                     hand.profiles[current_interaction_profile].vector_activators.erase(activator);
                     hand.profiles[current_interaction_profile].vector_activators[new_activator] = old_outputs;
+
+                    ImGui::Unindent();
+                    ImGui::PopID();
+                    ImGui::PopID();
+                    ImGui::PopID();
+                    break;
                 }
 
                 ImGui::Indent();

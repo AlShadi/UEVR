@@ -31,6 +31,9 @@ enum class UEVersion {
     UE5_2,
     UE5_3,
     UE5_4,
+    UE5_5,
+    UE5_6,
+    UE5_7,
 };
 
 struct UEVersionRule {
@@ -39,7 +42,10 @@ struct UEVersionRule {
     UEVersion version;
 };
 
-inline constexpr std::array<UEVersionRule, 23> k_ue_version_rules{{
+inline constexpr std::array<UEVersionRule, 26> k_ue_version_rules{{
+    {0x50007, "5.7", UEVersion::UE5_7},
+    {0x50006, "5.6", UEVersion::UE5_6},
+    {0x50005, "5.5", UEVersion::UE5_5},
     {0x50004, "5.4", UEVersion::UE5_4},
     {0x50003, "5.3", UEVersion::UE5_3},
     {0x50002, "5.2", UEVersion::UE5_2},
@@ -66,11 +72,21 @@ inline constexpr std::array<UEVersionRule, 23> k_ue_version_rules{{
 }};
 
 [[nodiscard]] constexpr UEVersion detect_ue_version(uint32_t file_version_ms, std::string_view str_version) noexcept {
-    // When executable string detection succeeded (!= "0.00"), callers pass 0 for file_version_ms
-    // so the string prefix takes precedence over disk file version metadata.
-    for (const auto& rule : k_ue_version_rules) {
-        if (file_version_ms == rule.file_version_ms || str_version.starts_with(rule.prefix)) {
-            return rule.version;
+    // Check string prefix first so explicit version overrides or embedded engine strings
+    // take precedence over disk file version metadata.
+    if (!str_version.empty() && str_version != "0.00") {
+        for (const auto& rule : k_ue_version_rules) {
+            if (str_version.starts_with(rule.prefix)) {
+                return rule.version;
+            }
+        }
+    }
+
+    if (file_version_ms != 0) {
+        for (const auto& rule : k_ue_version_rules) {
+            if (file_version_ms == rule.file_version_ms) {
+                return rule.version;
+            }
         }
     }
 

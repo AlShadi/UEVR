@@ -68,7 +68,13 @@ namespace detail {
 }
 
 ::fs::path fix_subdir(::fs::path subdir) {
-    ::fs::path out{subdir};
+    ::fs::path out{};
+    for (const auto& part : subdir) {
+        if (out.empty() && part == "$scripts") {
+            continue;
+        }
+        out /= part;
+    }
 
     return out;
 }
@@ -76,7 +82,20 @@ namespace detail {
 
 sol::table glob(sol::this_state l, const char* filter, const char* modifier) {
     sol::state_view state{l};
-    std::regex filter_regex{filter};
+    if (filter == nullptr) {
+        lua_pushstring(l, "fs.glob: filter cannot be null");
+        lua_error(l);
+        return state.create_table();
+    }
+
+    std::regex filter_regex{};
+    try {
+        filter_regex = std::regex{filter};
+    } catch (const std::regex_error& e) {
+        lua_pushstring(l, e.what());
+        lua_error(l);
+        return state.create_table();
+    }
     auto results = state.create_table();
     auto datadir = detail::get_datadir(modifier != nullptr ? modifier : "");
     auto i = 0;
@@ -159,7 +178,7 @@ std::optional<::fs::path> get_correct_subpath(sol::this_state l, const std::stri
         return {};
     }
 
-    const auto path = api::fs::detail::get_datadir(filepath) / (corrected_subpath.has_filename() ? corrected_subpath.filename() : "");
+    const auto path = api::fs::detail::get_datadir(filepath) / corrected_subpath;
     const auto extension_lower = [&]() {
         auto ext = path.extension().string();
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
